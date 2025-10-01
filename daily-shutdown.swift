@@ -347,7 +347,7 @@ You may postpone up to \(remaining) more time(s).
             w.center()
             w.makeKeyAndOrderFront(nil)
 
-            NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: w, queue: .main) { [weak self, weak w] _ in
+            NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: w, queue: .main) { [weak w] _ in
                 guard let w = w else { return }
                 w.level = .screenSaver
                 w.makeKeyAndOrderFront(nil)
