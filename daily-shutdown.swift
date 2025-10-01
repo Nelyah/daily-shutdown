@@ -231,6 +231,7 @@ You may postpone up to \(remaining) more time(s).
             w.level = .floating
             w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             w.isReleasedWhenClosed = false
+            w.center()
             w.makeKeyAndOrderFront(nil)
             
             // Request user attention (Dock bounce) for visibility.
