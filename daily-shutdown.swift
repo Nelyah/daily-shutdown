@@ -84,6 +84,7 @@ final class ShutdownManager {
     private var finalTimer: DispatchSourceTimer?
     private var activeWarningAlert: NSAlert?
     private var autoShutdownTimer: DispatchSourceTimer?
+    private var keepFrontTimer: DispatchSourceTimer?
     
     init() {
         try? FileManager.default.createDirectory(at: stateDir, withIntermediateDirectories: true)
@@ -243,11 +244,33 @@ You may postpone up to \(remaining) more time(s).
             
             // Elevate window above normal app windows and show on all Spaces (incl. full screen).
             let w = alert.window
-            w.level = .floating
-            w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            w.level = .screenSaver
+            w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
             w.isReleasedWhenClosed = false
+            w.hidesOnDeactivate = false
             w.center()
             w.makeKeyAndOrderFront(nil)
+
+            NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: w, queue: .main) { [weak self, weak w] _ in
+                guard let w = w else { return }
+                w.level = .screenSaver
+                w.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+
+            self.keepFrontTimer?.cancel()
+            let frontTimer = DispatchSource.makeTimerSource(queue: .main)
+            frontTimer.schedule(deadline: .now() + 0.5, repeating: 1.0)
+            frontTimer.setEventHandler { [weak w] in
+                guard let w = w else { return }
+                if !w.isKeyWindow {
+                    w.level = .screenSaver
+                    w.makeKeyAndOrderFront(nil)
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+            }
+            self.keepFrontTimer = frontTimer
+            frontTimer.activate()
             
             // Request user attention (Dock bounce) for visibility.
             NSApp.requestUserAttention(.criticalRequest)
@@ -282,6 +305,8 @@ You may postpone up to \(remaining) more time(s).
             self.autoShutdownTimer?.cancel()
             self.autoShutdownTimer = nil
             self.activeWarningAlert = nil
+            self.keepFrontTimer?.cancel()
+            self.keepFrontTimer = nil
             self.handleWarningResponse(response)
         }
     }
