@@ -77,6 +77,8 @@ final class ShutdownManager {
     private let calendar = Calendar.current
     private var warningTimer: DispatchSourceTimer?
     private var finalTimer: DispatchSourceTimer?
+    private var activeWarningAlert: NSAlert?
+    private var autoShutdownTimer: DispatchSourceTimer?
     
     init() {
         try? FileManager.default.createDirectory(at: stateDir, withIntermediateDirectories: true)
@@ -204,6 +206,12 @@ final class ShutdownManager {
     private func presentWarning() {
         guard let shutdownDate = isoFormatter.date(from: state.scheduledShutdownISO) else { return }
         DispatchQueue.main.async {
+            // If we are already past the scheduled shutdown time, execute immediately.
+            if shutdownDate <= Date() {
+                self.performFinalAction(immediate: true)
+                return
+            }
+            
             let formatter = DateFormatter()
             formatter.timeStyle = .short
             let timeStr = formatter.string(from: shutdownDate)
@@ -237,7 +245,35 @@ You may postpone up to \(remaining) more time(s).
             // Request user attention (Dock bounce) for visibility.
             NSApp.requestUserAttention(.criticalRequest)
             
+            // Set up auto-shutdown in case user does not interact before scheduled time.
+            let remainingInterval = shutdownDate.timeIntervalSinceNow
+            if remainingInterval <= 0 {
+                // Safety double-check.
+                self.performFinalAction(immediate: true)
+                return
+            }
+            self.activeWarningAlert = alert
+            let auto = DispatchSource.makeTimerSource(queue: .main)
+            auto.schedule(deadline: .now() + remainingInterval)
+            auto.setEventHandler { [weak self] in
+                guard let self else { return }
+                if self.activeWarningAlert != nil {
+                    // User has not interacted; proceed with final action.
+                    self.activeWarningAlert = nil
+                    self.autoShutdownTimer?.cancel()
+                    self.autoShutdownTimer = nil
+                    self.performFinalAction(immediate: true)
+                }
+            }
+            self.autoShutdownTimer?.cancel()
+            self.autoShutdownTimer = auto
+            auto.activate()
+            
             let response = alert.runModal()
+            // User interacted; cancel pending auto action.
+            self.autoShutdownTimer?.cancel()
+            self.autoShutdownTimer = nil
+            self.activeWarningAlert = nil
             self.handleWarningResponse(response)
         }
     }
