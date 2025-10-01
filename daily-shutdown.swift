@@ -508,9 +508,9 @@ You may postpone up to \(remaining) more time(s).
         let action = state.finalAction
         if opts.dryRun {
             print("[DRY RUN] Would \(action == .reboot ? "reboot" : "shutdown") now at \(Date())"); fflush(stdout)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                exit(0)
-            }
+            // Immediately compute next day's schedule so repeated dry-runs demonstrate rollover behavior.
+            normalizeForToday()
+            scheduleAll()
             return
         }
         let script: String
@@ -529,6 +529,11 @@ You may postpone up to \(remaining) more time(s).
         task.launchPath = "/usr/bin/osascript"
         task.arguments = ["-e", script]
         try? task.run()
+        
+        // Proactively schedule the next daily shutdown in case the system does NOT actually
+        // go down (e.g. user cancels system dialog, lacks privileges, or AppleScript fails).
+        normalizeForToday()
+        scheduleAll()
         
         // Exit after short delay to allow LaunchAgent to restart fresh next login
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
