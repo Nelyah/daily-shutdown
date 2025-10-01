@@ -203,24 +203,42 @@ final class ShutdownManager {
     // MARK: - UI & Actions
     private func presentWarning() {
         guard let shutdownDate = isoFormatter.date(from: state.scheduledShutdownISO) else { return }
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        let timeStr = formatter.string(from: shutdownDate)
-        let remaining = effectiveMaxPostpones - state.postponesUsed
-        let alert = NSAlert()
-        alert.messageText = "Scheduled System \(state.finalAction == .reboot ? "Reboot" : "Shutdown")"
-        alert.informativeText = """
+        DispatchQueue.main.async {
+            let formatter = DateFormatter()
+            formatter.timeStyle = .short
+            let timeStr = formatter.string(from: shutdownDate)
+            let remaining = effectiveMaxPostpones - self.state.postponesUsed
+            
+            // Ensure app is frontmost and eligible for regular windows each time.
+            NSApp.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
+            
+            let alert = NSAlert()
+            alert.alertStyle = .critical
+            alert.messageText = "Scheduled System \(self.state.finalAction == .reboot ? "Reboot" : "Shutdown")"
+            alert.informativeText = """
 The system is scheduled at \(timeStr).
 You may postpone up to \(remaining) more time(s).
 """
-        if state.postponesUsed < effectiveMaxPostpones {
-            alert.addButton(withTitle: "Postpone \(effectivePostponeIntervalMinutes) min")
+            if self.state.postponesUsed < effectiveMaxPostpones {
+                alert.addButton(withTitle: "Postpone \(effectivePostponeIntervalMinutes) min")
+            }
+            alert.addButton(withTitle: self.state.finalAction == .reboot ? "Reboot Now" : "Shutdown Now")
+            alert.addButton(withTitle: "Ignore")
+            
+            // Elevate window above normal app windows and show on all Spaces (incl. full screen).
+            let w = alert.window
+            w.level = .floating
+            w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            w.isReleasedWhenClosed = false
+            w.makeKeyAndOrderFront(nil)
+            
+            // Request user attention (Dock bounce) for visibility.
+            NSApp.requestUserAttention(.criticalRequest)
+            
+            let response = alert.runModal()
+            self.handleWarningResponse(response)
         }
-        alert.addButton(withTitle: state.finalAction == .reboot ? "Reboot Now" : "Shutdown Now")
-        alert.addButton(withTitle: "Ignore")
-        
-        let response = alert.runModal()
-        handleWarningResponse(response)
     }
     
     private func handleWarningResponse(_ response: NSApplication.ModalResponse) {
