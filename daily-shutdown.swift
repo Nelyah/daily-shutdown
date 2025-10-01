@@ -6,6 +6,22 @@ import Darwin
 setbuf(stdout, nil)
 setbuf(stderr, nil)
 
+// MARK: - Logging Helper
+private let logDateFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.timeZone = TimeZone.current
+    return f
+}()
+
+@inline(__always)
+func log(_ message: String) {
+    let ts = logDateFormatter.string(from: Date())
+    print("[\(ts)] \(message)")
+    fflush(stdout)
+}
+
 // MARK: - Configuration
 let dailyShutdownHour = 18
 let dailyShutdownMinute = 0
@@ -232,31 +248,31 @@ final class ShutdownManager {
         let oldISO = state.scheduledShutdownISO
         state = Self.newState(for: now)
         saveState()
-        print("normalizeForToday(): oldScheduled=\(oldISO) newScheduled=\(state.scheduledShutdownISO) postponesUsedReset=0 action=\(state.finalAction)"); fflush(stdout)
+        log("normalizeForToday(): oldScheduled=\(oldISO) newScheduled=\(state.scheduledShutdownISO) postponesUsedReset=0 action=\(state.finalAction)")
     }
     
     // MARK: - Scheduling
     private func scheduleAll() {
         cancelTimers()
         guard let shutdownDate = isoFormatter.date(from: state.scheduledShutdownISO) else {
-            print("scheduleAll(): could not parse scheduledShutdownISO=\(state.scheduledShutdownISO)"); fflush(stdout)
+            log("scheduleAll(): could not parse scheduledShutdownISO=\(state.scheduledShutdownISO)")
             return
         }
-        print("scheduleAll(): scheduling finalAction=\(state.finalAction) at \(shutdownDate) (postponesUsed=\(state.postponesUsed)/\(effectiveMaxPostpones))"); fflush(stdout)
+        log("scheduleAll(): scheduling finalAction=\(state.finalAction) at \(shutdownDate) (postponesUsed=\(state.postponesUsed)/\(effectiveMaxPostpones))")
         scheduleFinal(at: shutdownDate)
         
         if state.postponesUsed < effectiveMaxPostpones {
             let warningDate = shutdownDate.addingTimeInterval(-effectiveWarningLeadSeconds)
             if warningDate > Date() {
-                print("scheduleAll(): scheduling warning at \(warningDate) (lead=\(Int(effectiveWarningLeadSeconds))s)"); fflush(stdout)
+                log("scheduleAll(): scheduling warning at \(warningDate) (lead=\(Int(effectiveWarningLeadSeconds))s)")
                 scheduleWarning(at: warningDate)
             } else {
-                print("scheduleAll(): warning time already passed, presenting warning immediately"); fflush(stdout)
+                log("scheduleAll(): warning time already passed, presenting warning immediately")
                 // If warning time already passed (e.g. app started late), show immediately (once)
                 DispatchQueue.main.async { self.presentWarning() }
             }
         } else {
-            print("scheduleAll(): no warning scheduled (max postpones reached)"); fflush(stdout)
+            log("scheduleAll(): no warning scheduled (max postpones reached)")
         }
     }
     
@@ -270,19 +286,19 @@ final class ShutdownManager {
            let origDate = isoFormatter.date(from: origISO),
            abs(origDate.timeIntervalSince(shutdownDate)) > 1 {
             let origStr = df.string(from: origDate)
-            print("Scheduled shutdown at \(currentStr) (original \(origStr))"); fflush(stdout)
+            log("Scheduled shutdown at \(currentStr) (original \(origStr))")
         } else {
-            print("Scheduled shutdown at \(currentStr)"); fflush(stdout)
+            log("Scheduled shutdown at \(currentStr)")
         }
     }
     
     private func scheduleWarning(at date: Date) {
         let interval = date.timeIntervalSinceNow
-        print("scheduleWarning(): will fire in \(String(format: "%.2f", interval))s at \(date)"); fflush(stdout)
+        log("scheduleWarning(): will fire in \(String(format: "%.2f", interval))s at \(date)")
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + interval)
         timer.setEventHandler { [weak self] in
-            print("scheduleWarning(): firing warning timer at \(Date())"); fflush(stdout)
+            log("scheduleWarning(): firing warning timer at \(Date())")
             self?.presentWarning()
         }
         warningTimer = timer
@@ -292,11 +308,11 @@ final class ShutdownManager {
     private func scheduleFinal(at date: Date) {
           // Use a global queue so the timer is not blocked by any modal alert on the main thread.
           let interval = date.timeIntervalSinceNow
-          print("scheduleFinal(): will fire in \(String(format: "%.2f", interval))s at \(date) action=\(state.finalAction)"); fflush(stdout)
+          log("scheduleFinal(): will fire in \(String(format: "%.2f", interval))s at \(date) action=\(state.finalAction)")
           let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .userInitiated))
           timer.schedule(deadline: .now() + interval)
           timer.setEventHandler { [weak self] in
-              print("scheduleFinal(): firing final timer at \(Date())"); fflush(stdout)
+              log("scheduleFinal(): firing final timer at \(Date())")
               self?.performFinalAction()
           }
         finalTimer = timer
@@ -314,7 +330,7 @@ final class ShutdownManager {
     private func presentWarning() {
         guard let shutdownDate = isoFormatter.date(from: state.scheduledShutdownISO) else { return }
         DispatchQueue.main.async {
-            print("Presenting warning alert (postponesUsed=\(self.state.postponesUsed), remaining=\(effectiveMaxPostpones - self.state.postponesUsed))"); fflush(stdout)
+            log("Presenting warning alert (postponesUsed=\(self.state.postponesUsed), remaining=\(effectiveMaxPostpones - self.state.postponesUsed))")
             // If we are already past the scheduled shutdown time, execute immediately.
             if shutdownDate <= Date() {
                 self.performFinalAction(immediate: true)
@@ -346,9 +362,9 @@ final class ShutdownManager {
                 return nil
             }()
             if let orig = originalPlannedStr {
-                print("Original planned shutdown at \(orig); current scheduled at \(timeStr)"); fflush(stdout)
+                log("Original planned shutdown at \(orig); current scheduled at \(timeStr)")
             } else {
-                print("Scheduled shutdown at \(timeStr)"); fflush(stdout)
+                log("Scheduled shutdown at \(timeStr)")
             }
             alert.informativeText = """
 The system is scheduled to shutdown at \(timeStr).
@@ -522,16 +538,16 @@ You may postpone up to \(remaining) more time(s).
             changedAction = false
         }
         saveState()
-        print("applyPostpone(): postponesUsed=\(state.postponesUsed)/\(effectiveMaxPostpones) old=\(beforeISO) new=\(state.scheduledShutdownISO) interval+=\(effectivePostponeIntervalSeconds)s action=\(state.finalAction)\(changedAction ? " (action changed)" : "")"); fflush(stdout)
+        log("applyPostpone(): postponesUsed=\(state.postponesUsed)/\(effectiveMaxPostpones) old=\(beforeISO) new=\(state.scheduledShutdownISO) interval+=\(effectivePostponeIntervalSeconds)s action=\(state.finalAction)\(changedAction ? " (action changed)" : "")")
         scheduleAll()
     }
     
     private func performFinalAction(immediate: Bool = false) {
         // Fire actual system command
         let action = state.finalAction
-        print("performFinalAction(): initiating action=\(action) immediate=\(immediate) dryRun=\(opts.dryRun) at \(Date())"); fflush(stdout)
+        log("performFinalAction(): initiating action=\(action) immediate=\(immediate) dryRun=\(opts.dryRun) at \(Date())")
         if opts.dryRun {
-            print("[DRY RUN] Would \(action == .reboot ? "reboot" : "shutdown") now at \(Date())"); fflush(stdout)
+            log("[DRY RUN] Would \(action == .reboot ? "reboot" : "shutdown") now at \(Date())")
             // Immediately compute next day's schedule so repeated dry-runs demonstrate rollover behavior.
             normalizeForToday()
             scheduleAll()
@@ -554,9 +570,9 @@ You may postpone up to \(remaining) more time(s).
         task.arguments = ["-e", script]
         do {
             try task.run()
-            print("performFinalAction(): launched osascript pid=\(task.processIdentifier)"); fflush(stdout)
+            log("performFinalAction(): launched osascript pid=\(task.processIdentifier)")
         } catch {
-            print("performFinalAction(): failed to launch osascript error=\(error)"); fflush(stdout)
+            log("performFinalAction(): failed to launch osascript error=\(error)")
         }
         
         // Proactively schedule the next daily shutdown in case the system does NOT actually
@@ -566,7 +582,7 @@ You may postpone up to \(remaining) more time(s).
         
         // Exit after short delay to allow LaunchAgent to restart fresh next login
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            print("performFinalAction(): exiting process after grace delay"); fflush(stdout)
+            log("performFinalAction(): exiting process after grace delay")
             exit(0)
         }
     }
