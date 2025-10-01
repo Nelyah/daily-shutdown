@@ -1,5 +1,9 @@
 import Foundation
 import AppKit
+import OSLog
+
+// Unified logger for the utility.
+private let logger = Logger(subsystem: "com.example.daily-shutdown", category: "core")
 
 // MARK: - Configuration
 let dailyShutdownHour = 16
@@ -203,9 +207,9 @@ final class ShutdownManager {
            let origDate = isoFormatter.date(from: origISO),
            abs(origDate.timeIntervalSince(shutdownDate)) > 1 {
             let origStr = df.string(from: origDate)
-            print("Scheduled shutdown at \(currentStr) (original \(origStr))")
+            logger.info("Scheduled shutdown at \(currentStr, privacy: .public) (original \(origStr, privacy: .public))")
         } else {
-            print("Scheduled shutdown at \(currentStr)")
+            logger.info("Scheduled shutdown at \(currentStr, privacy: .public)")
         }
     }
     
@@ -272,9 +276,9 @@ final class ShutdownManager {
                 return nil
             }()
             if let orig = originalPlannedStr {
-                print("Original planned shutdown at \(orig); current scheduled at \(timeStr)")
+                logger.notice("Original planned shutdown at \(orig, privacy: .public); current scheduled at \(timeStr, privacy: .public)")
             } else {
-                print("Scheduled shutdown at \(timeStr)")
+                logger.info("Scheduled shutdown at \(timeStr, privacy: .public)")
             }
             alert.informativeText = """
 The system is scheduled to shutdown at \(timeStr).
@@ -449,7 +453,7 @@ You may postpone up to \(remaining) more time(s).
         // Fire actual system command
         let action = state.finalAction
         if opts.dryRun {
-            print("[DRY RUN] Would \(action == .reboot ? "reboot" : "shutdown") now at \(Date())")
+            logger.info("[DRY RUN] Would \(action == .reboot ? "reboot" : "shutdown") now at \(Date(), privacy: .public)")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 exit(0)
             }
