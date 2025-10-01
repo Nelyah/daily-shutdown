@@ -310,8 +310,8 @@ final class ShutdownManager {
             let timeStr = formatter.string(from: shutdownDate)
             let remaining = effectiveMaxPostpones - self.state.postponesUsed
             
-            // Ensure app is frontmost and eligible for regular windows each time.
-            NSApp.setActivationPolicy(.regular)
+            // Ensure app can present alert without showing Dock icon.
+            NSApp.setActivationPolicy(.accessory)
             NSApp.activate(ignoringOtherApps: true)
             
             let alert = NSAlert()
@@ -552,8 +552,10 @@ private let dateFormatter: DateFormatter = {
 
 // MARK: - Main
 let app = NSApplication.shared
+// Hide Dock icon by using accessory activation policy always.
+app.setActivationPolicy(.accessory)
 if opts.relativeSeconds != nil || opts.dryRun {
-    app.setActivationPolicy(.regular)
+    // Still bring alert windows forward in test/dry-run modes.
     NSApp.activate(ignoringOtherApps: true)
 }
 let manager = ShutdownManager()
