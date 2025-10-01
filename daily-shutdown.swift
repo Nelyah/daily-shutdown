@@ -110,6 +110,8 @@ final class ShutdownManager {
         }
         normalizeForToday()
         scheduleAll()
+        // Log the scheduled shutdown time at startup (even without CLI arguments).
+        logScheduledStartup()
     }
     
     // MARK: - State Handling
@@ -188,6 +190,22 @@ final class ShutdownManager {
                 // If warning time already passed (e.g. app started late), show immediately (once)
                 DispatchQueue.main.async { self.presentWarning() }
             }
+        }
+    }
+    
+    private func logScheduledStartup() {
+        guard let shutdownDate = isoFormatter.date(from: state.scheduledShutdownISO) else { return }
+        let df = DateFormatter()
+        df.dateStyle = .none
+        df.timeStyle = .short
+        let currentStr = df.string(from: shutdownDate)
+        if let origISO = state.originalScheduledShutdownISO,
+           let origDate = isoFormatter.date(from: origISO),
+           abs(origDate.timeIntervalSince(shutdownDate)) > 1 {
+            let origStr = df.string(from: origDate)
+            print("Scheduled shutdown at \(currentStr) (original \(origStr))")
+        } else {
+            print("Scheduled shutdown at \(currentStr)")
         }
     }
     
