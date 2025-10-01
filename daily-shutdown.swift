@@ -241,6 +241,33 @@ You may postpone up to \(remaining) more time(s).
             }
             alert.addButton(withTitle: self.state.finalAction == .reboot ? "Reboot Now" : "Shutdown Now")
             alert.addButton(withTitle: "Ignore")
+
+            // Style the destructive (immediate shutdown/reboot) button in red for emphasis.
+            // NSAlert buttons array is in the order added (appears right-to-left visually).
+            // When postpone is available: [Postpone, Shutdown/Reboot Now, Ignore]
+            // When postpone not available (rare here): [Shutdown/Reboot Now, Ignore]
+            let buttons = alert.buttons
+            let destructiveButton: NSButton? = {
+                if self.state.postponesUsed < effectiveMaxPostpones {
+                    return buttons.count > 1 ? buttons[1] : nil
+                } else {
+                    return buttons.first
+                }
+            }()
+            if let destructiveButton {
+                if #available(macOS 13.0, *) {
+                    destructiveButton.hasDestructiveAction = true
+                }
+                if #available(macOS 11.0, *) {
+                    destructiveButton.contentTintColor = .systemRed
+                } else {
+                    // Fallback: manually color the title for older systems.
+                    destructiveButton.attributedTitle = NSAttributedString(
+                        string: destructiveButton.title,
+                        attributes: [.foregroundColor: NSColor.red]
+                    )
+                }
+            }
             
             // Elevate window above normal app windows and show on all Spaces (incl. full screen).
             let w = alert.window
