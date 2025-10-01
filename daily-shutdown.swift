@@ -19,7 +19,7 @@ struct RuntimeOptions {
     var dryRun = false                       // --dry-run (no real shutdown/reboot)
     var noPersist = false                    // --no-persist (do not read/write state file)
     var actionOverride: FinalAction? = nil   // --action shutdown|reboot
-    var postponeIntervalMinutesOverride: Int? = nil // --postpone-min M
+    var postponeIntervalSecondsOverride: Int? = nil // --postpone-min S (value now interpreted as seconds)
     var maxPostponesOverride: Int? = nil     // --max-postpones K
 }
 
@@ -39,8 +39,8 @@ let opts: RuntimeOptions = {
             o.noPersist = true
         case "--action":
             if let v = it.next(), let act = FinalAction(rawValue: v) { o.actionOverride = act }
-        case "--postpone-min":
-            if let v = it.next(), let m = Int(v) { o.postponeIntervalMinutesOverride = m }
+        case "--postpone-sec":
+            if let v = it.next(), let m = Int(v) { o.postponeIntervalSecondsOverride = m }
         case "--max-postpones":
             if let v = it.next(), let m = Int(v) { o.maxPostponesOverride = m }
         default:
@@ -57,7 +57,11 @@ let effectiveWarningLeadSeconds: TimeInterval = {
     return TimeInterval(warningLeadMinutes * 60)
 }()
 
-let effectivePostponeIntervalMinutes = opts.postponeIntervalMinutesOverride ?? postponeIntervalMinutes
+// CLI override (--postpone-min) now supplies seconds directly. If not provided, use default minutes * 60.
+let effectivePostponeIntervalSeconds: Int = {
+    if let v = opts.postponeIntervalSecondsOverride { return v } // already seconds
+    return postponeIntervalMinutes * 60
+}()
 let effectiveMaxPostpones = opts.maxPostponesOverride ?? maxPostpones
 
 enum FinalAction: String, Codable {
@@ -76,6 +80,7 @@ final class ShutdownManager {
     private var state: ShutdownState
     private let calendar = Calendar.current
     private var warningTimer: DispatchSourceTimer?
+    // finalTimer runs on a background queue so it can fire even while a modal alert is presented.
     private var finalTimer: DispatchSourceTimer?
     private var activeWarningAlert: NSAlert?
     private var autoShutdownTimer: DispatchSourceTimer?
@@ -186,11 +191,12 @@ final class ShutdownManager {
     }
     
     private func scheduleFinal(at date: Date) {
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + date.timeIntervalSinceNow)
-        timer.setEventHandler { [weak self] in
-            self?.performFinalAction()
-        }
+          // Use a global queue so the timer is not blocked by any modal alert on the main thread.
+          let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .userInitiated))
+          timer.schedule(deadline: .now() + date.timeIntervalSinceNow)
+          timer.setEventHandler { [weak self] in
+              self?.performFinalAction()
+          }
         finalTimer = timer
         timer.activate()
     }
@@ -229,7 +235,8 @@ The system is scheduled at \(timeStr).
 You may postpone up to \(remaining) more time(s).
 """
             if self.state.postponesUsed < effectiveMaxPostpones {
-                alert.addButton(withTitle: "Postpone \(effectivePostponeIntervalMinutes) min")
+                  let postponeMinutesDisplay = Int(round(Double(effectivePostponeIntervalSeconds) / 60.0))
+                  alert.addButton(withTitle: "Postpone \(postponeMinutesDisplay) min")
             }
             alert.addButton(withTitle: self.state.finalAction == .reboot ? "Reboot Now" : "Shutdown Now")
             alert.addButton(withTitle: "Ignore")
@@ -253,7 +260,8 @@ You may postpone up to \(remaining) more time(s).
                 return
             }
             self.activeWarningAlert = alert
-            let auto = DispatchSource.makeTimerSource(queue: .main)
+              // Background queue so it can still trigger during modal session.
+              let auto = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .userInitiated))
             auto.schedule(deadline: .now() + remainingInterval)
             auto.setEventHandler { [weak self] in
                 guard let self else { return }
@@ -305,7 +313,7 @@ You may postpone up to \(remaining) more time(s).
     private func applyPostpone() {
         state.postponesUsed += 1
         if var shutdownDate = isoFormatter.date(from: state.scheduledShutdownISO) {
-            shutdownDate.addTimeInterval(TimeInterval(effectivePostponeIntervalMinutes * 60))
+            shutdownDate.addTimeInterval(TimeInterval(effectivePostponeIntervalSeconds))
             state.scheduledShutdownISO = isoFormatter.string(from: shutdownDate)
         }
         if state.postponesUsed >= effectiveMaxPostpones {
