@@ -11,6 +11,55 @@ let stateDir = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent("Library/Application Support/DailyShutdown", isDirectory: true)
 let stateFile = stateDir.appendingPathComponent("state.json")
 
+// MARK: - Runtime / Testing Overrides
+
+struct RuntimeOptions {
+    var relativeSeconds: Int? = nil          // --in-seconds N
+    var warnLeadSeconds: Int? = nil          // --warn-seconds S
+    var dryRun = false                       // --dry-run (no real shutdown/reboot)
+    var noPersist = false                    // --no-persist (do not read/write state file)
+    var actionOverride: FinalAction? = nil   // --action shutdown|reboot
+    var postponeIntervalMinutesOverride: Int? = nil // --postpone-min M
+    var maxPostponesOverride: Int? = nil     // --max-postpones K
+}
+
+let opts: RuntimeOptions = {
+    var o = RuntimeOptions()
+    var it = CommandLine.arguments.makeIterator()
+    _ = it.next() // skip executable name
+    while let a = it.next() {
+        switch a {
+        case "--in-seconds":
+            if let v = it.next(), let s = Int(v) { o.relativeSeconds = s }
+        case "--warn-seconds":
+            if let v = it.next(), let s = Int(v) { o.warnLeadSeconds = s }
+        case "--dry-run":
+            o.dryRun = true
+        case "--no-persist":
+            o.noPersist = true
+        case "--action":
+            if let v = it.next(), let act = FinalAction(rawValue: v) { o.actionOverride = act }
+        case "--postpone-min":
+            if let v = it.next(), let m = Int(v) { o.postponeIntervalMinutesOverride = m }
+        case "--max-postpones":
+            if let v = it.next(), let m = Int(v) { o.maxPostponesOverride = m }
+        default:
+            // Unknown flag: ignore (could print help)
+            break
+        }
+    }
+    return o
+}()
+
+// Effective (possibly overridden) configuration
+let effectiveWarningLeadSeconds: TimeInterval = {
+    if let s = opts.warnLeadSeconds { return TimeInterval(s) }
+    return TimeInterval(warningLeadMinutes * 60)
+}()
+
+let effectivePostponeIntervalMinutes = opts.postponeIntervalMinutesOverride ?? postponeIntervalMinutes
+let effectiveMaxPostpones = opts.maxPostponesOverride ?? maxPostpones
+
 enum FinalAction: String, Codable {
     case shutdown
     case reboot
@@ -31,13 +80,35 @@ final class ShutdownManager {
     
     init() {
         try? FileManager.default.createDirectory(at: stateDir, withIntermediateDirectories: true)
-        self.state = Self.loadState() ?? Self.newState(for: Date())
+        if opts.noPersist {
+            self.state = Self.newState(for: Date())
+        } else {
+            self.state = Self.loadState() ?? Self.newState(for: Date())
+        }
+        // If a relative test run is requested, always create a fresh relative state
+        if opts.relativeSeconds != nil {
+            self.state = Self.newState(for: Date())
+        }
+        if let override = opts.actionOverride {
+            self.state.finalAction = override
+        }
         normalizeForToday()
         scheduleAll()
     }
     
     // MARK: - State Handling
     private static func newState(for now: Date) -> ShutdownState {
+        // If test relative schedule supplied, schedule that many seconds from now
+        if let rel = opts.relativeSeconds {
+            let shutdownDate = now.addingTimeInterval(TimeInterval(rel))
+            let dateStamp = dateFormatter.string(from: now)
+            return ShutdownState(
+                date: dateStamp,
+                postponesUsed: 0,
+                scheduledShutdownISO: isoFormatter.string(from: shutdownDate),
+                finalAction: .shutdown
+            )
+        }
         let calendar = Calendar.current
         var components = calendar.dateComponents([.year, .month, .day], from: now)
         components.hour = dailyShutdownHour
@@ -58,11 +129,13 @@ final class ShutdownManager {
     }
     
     private static func loadState() -> ShutdownState? {
+        if opts.noPersist { return nil }
         guard let data = try? Data(contentsOf: stateFile) else { return nil }
         return try? JSONDecoder().decode(ShutdownState.self, from: data)
     }
     
     private func saveState() {
+        if opts.noPersist { return }
         if let data = try? JSONEncoder().encode(state) {
             try? data.write(to: stateFile, options: .atomic)
         }
@@ -89,8 +162,8 @@ final class ShutdownManager {
         guard let shutdownDate = isoFormatter.date(from: state.scheduledShutdownISO) else { return }
         scheduleFinal(at: shutdownDate)
         
-        if state.postponesUsed < maxPostpones {
-            let warningDate = shutdownDate.addingTimeInterval(TimeInterval(-warningLeadMinutes * 60))
+        if state.postponesUsed < effectiveMaxPostpones {
+            let warningDate = shutdownDate.addingTimeInterval(-effectiveWarningLeadSeconds)
             if warningDate > Date() {
                 scheduleWarning(at: warningDate)
             } else {
@@ -133,15 +206,15 @@ final class ShutdownManager {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
         let timeStr = formatter.string(from: shutdownDate)
-        let remaining = maxPostpones - state.postponesUsed
+        let remaining = effectiveMaxPostpones - state.postponesUsed
         let alert = NSAlert()
         alert.messageText = "Scheduled System \(state.finalAction == .reboot ? "Reboot" : "Shutdown")"
         alert.informativeText = """
 The system is scheduled at \(timeStr).
 You may postpone up to \(remaining) more time(s).
 """
-        if state.postponesUsed < maxPostpones {
-            alert.addButton(withTitle: "Postpone \(postponeIntervalMinutes) min")
+        if state.postponesUsed < effectiveMaxPostpones {
+            alert.addButton(withTitle: "Postpone \(effectivePostponeIntervalMinutes) min")
         }
         alert.addButton(withTitle: state.finalAction == .reboot ? "Reboot Now" : "Shutdown Now")
         alert.addButton(withTitle: "Ignore")
@@ -156,7 +229,7 @@ You may postpone up to \(remaining) more time(s).
         //   First: Postpone, Second: Shutdown/Reboot Now, Third: Ignore
         // If no postpones (not shown, but logic ensures we don't call warning when no postpones):
         //   First: Shutdown/Reboot Now, Second: Ignore
-        if state.postponesUsed < maxPostpones {
+        if state.postponesUsed < effectiveMaxPostpones {
             if response == .alertFirstButtonReturn {
                 applyPostpone()
                 return
@@ -177,12 +250,12 @@ You may postpone up to \(remaining) more time(s).
     private func applyPostpone() {
         state.postponesUsed += 1
         if var shutdownDate = isoFormatter.date(from: state.scheduledShutdownISO) {
-            shutdownDate.addTimeInterval(TimeInterval(postponeIntervalMinutes * 60))
+            shutdownDate.addTimeInterval(TimeInterval(effectivePostponeIntervalMinutes * 60))
             state.scheduledShutdownISO = isoFormatter.string(from: shutdownDate)
         }
-        if state.postponesUsed >= maxPostpones {
+        if state.postponesUsed >= effectiveMaxPostpones {
             state.finalAction = .reboot
-            // After 3rd postpone: no further warning, just final timer at updated time
+            // After final postpone: no further warning, just final timer at updated time
         }
         saveState()
         scheduleAll()
@@ -191,6 +264,13 @@ You may postpone up to \(remaining) more time(s).
     private func performFinalAction(immediate: Bool = false) {
         // Fire actual system command
         let action = state.finalAction
+        if opts.dryRun {
+            print("[DRY RUN] Would \(action == .reboot ? "reboot" : "shutdown") now at \(Date())")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                exit(0)
+            }
+            return
+        }
         let script: String
         switch action {
         case .shutdown:
@@ -227,5 +307,9 @@ private let dateFormatter: DateFormatter = {
 
 // MARK: - Main
 let app = NSApplication.shared
+if opts.relativeSeconds != nil || opts.dryRun {
+    app.setActivationPolicy(.regular)
+    NSApp.activate(ignoringOtherApps: true)
+}
 let manager = ShutdownManager()
 RunLoop.main.run()
