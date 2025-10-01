@@ -10,12 +10,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SRC_FILE="daily-shutdown.swift"
 BIN_NAME="daily-shutdown"
 
-# Determine install directory.
-if [ -d "/User/$USER/bin" ]; then
-  INSTALL_DIR="/User/$USER/bin"
-else
-  INSTALL_DIR="$HOME/bin"
-fi
+INSTALL_DIR="$HOME/bin"
 
 PLIST_DIR="$HOME/Library/LaunchAgents"
 PLIST_LABEL="com.example.daily-shutdown"

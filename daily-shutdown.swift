@@ -7,8 +7,8 @@ setbuf(stdout, nil)
 setbuf(stderr, nil)
 
 // MARK: - Configuration
-let dailyShutdownHour = 16
-let dailyShutdownMinute = 6
+let dailyShutdownHour = 18
+let dailyShutdownMinute = 0
 let warningLeadMinutes = 15
 let postponeIntervalMinutes = 15
 let maxPostpones = 3
