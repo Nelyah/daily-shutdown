@@ -74,6 +74,9 @@ struct ShutdownState: Codable {
     var postponesUsed: Int
     var scheduledShutdownISO: String
     var finalAction: FinalAction
+    // Preserve the originally scheduled shutdown time (before any postpones).
+    // Optional for backward compatibility with older state files.
+    var originalScheduledShutdownISO: String?
 }
 
 final class ShutdownManager {
@@ -100,6 +103,11 @@ final class ShutdownManager {
         if let override = opts.actionOverride {
             self.state.finalAction = override
         }
+        // Backward compatibility: if original not stored, set it now.
+        if self.state.originalScheduledShutdownISO == nil {
+            self.state.originalScheduledShutdownISO = self.state.scheduledShutdownISO
+            saveState()
+        }
         normalizeForToday()
         scheduleAll()
     }
@@ -114,7 +122,8 @@ final class ShutdownManager {
                 date: dateStamp,
                 postponesUsed: 0,
                 scheduledShutdownISO: isoFormatter.string(from: shutdownDate),
-                finalAction: .shutdown
+                finalAction: .shutdown,
+                originalScheduledShutdownISO: isoFormatter.string(from: shutdownDate)
             )
         }
         let calendar = Calendar.current
@@ -132,7 +141,8 @@ final class ShutdownManager {
             date: dateStamp,
             postponesUsed: 0,
             scheduledShutdownISO: isoFormatter.string(from: shutdownDate),
-            finalAction: .shutdown
+            finalAction: .shutdown,
+            originalScheduledShutdownISO: isoFormatter.string(from: shutdownDate)
         )
     }
     
@@ -231,8 +241,26 @@ final class ShutdownManager {
             let alert = NSAlert()
             alert.alertStyle = .critical
             alert.messageText = "Scheduled System \(self.state.finalAction == .reboot ? "Reboot" : "Shutdown")"
+            // Compute original planned shutdown time if available & different.
+            let originalPlannedStr: String? = {
+                if let origISO = self.state.originalScheduledShutdownISO,
+                   let origDate = isoFormatter.date(from: origISO) {
+                    if abs(origDate.timeIntervalSince(shutdownDate)) > 1 { // different
+                        let df = DateFormatter()
+                        df.timeStyle = .short
+                        return df.string(from: origDate)
+                    }
+                }
+                return nil
+            }()
+            if let orig = originalPlannedStr {
+                print("Original planned shutdown at \(orig); current scheduled at \(timeStr)")
+            } else {
+                print("Scheduled shutdown at \(timeStr)")
+            }
             alert.informativeText = """
 The system is scheduled at \(timeStr).
+\(originalPlannedStr != nil ? "Originally planned at \(originalPlannedStr!)." : "")
 You may postpone up to \(remaining) more time(s).
 """
             if self.state.postponesUsed < effectiveMaxPostpones {
