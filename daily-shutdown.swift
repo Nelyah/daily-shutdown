@@ -268,6 +268,29 @@ You may postpone up to \(remaining) more time(s).
                     )
                 }
             }
+
+            // Darker background styling for the entire alert window content for stronger focus.
+            if let contentView = alert.window.contentView {
+                contentView.wantsLayer = true
+                // Create a darker red by blending with black, then apply semi-opaque alpha.
+                let NSColorBlack = NSColor.black
+                contentView.layer?.backgroundColor = NSColorBlack.withAlphaComponent(0.8).cgColor
+                contentView.layer?.cornerRadius = 14
+                contentView.layer?.masksToBounds = true
+
+                // Make all text labels white for contrast.
+                func applyWhiteText(in view: NSView) {
+                    for sub in view.subviews {
+                        if let tf = sub as? NSTextField {
+                            tf.textColor = .white
+                            tf.backgroundColor = .clear
+                            tf.drawsBackground = false
+                        }
+                        applyWhiteText(in: sub)
+                    }
+                }
+                applyWhiteText(in: contentView)
+            }
             
             // Elevate window above normal app windows and show on all Spaces (incl. full screen).
             let w = alert.window
