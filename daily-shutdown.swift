@@ -15,6 +15,7 @@ let maxPostpones = 3
 let stateDir = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent("Library/Application Support/DailyShutdown", isDirectory: true)
 let stateFile = stateDir.appendingPathComponent("state.json")
+let resumePrefsFile = stateDir.appendingPathComponent("resume-prefs.json")
 
 // MARK: - Runtime / Testing Overrides
 
@@ -113,6 +114,8 @@ final class ShutdownManager {
             self.state.originalScheduledShutdownISO = self.state.scheduledShutdownISO
             saveState()
         }
+        // Restore original resume preferences if we suppressed them during last forced shutdown.
+        restoreResumePrefsIfNeeded()
         normalizeForToday()
         scheduleAll()
         // Log the scheduled shutdown time at startup (even without CLI arguments).
@@ -164,6 +167,62 @@ final class ShutdownManager {
         if let data = try? JSONEncoder().encode(state) {
             try? data.write(to: stateFile, options: .atomic)
         }
+    }
+    
+    // MARK: - Resume Preference Handling
+    private struct ResumePrefs: Codable {
+        var launchRelaunchApps: Bool?
+        var talLogoutSavesState: Bool?
+    }
+    
+    private func readLoginwindowBool(_ key: String) -> Bool? {
+        let task = Process()
+        task.launchPath = "/usr/bin/defaults"
+        task.arguments = ["read", "com.apple.loginwindow", key]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        try? task.run()
+        task.waitUntilExit()
+        guard task.terminationStatus == 0 else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let raw = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() else { return nil }
+        switch raw {
+        case "1", "true": return true
+        case "0", "false": return false
+        default: return nil
+        }
+    }
+    
+    private func writeLoginwindowBool(_ key: String, value: Bool) {
+        let task = Process()
+        task.launchPath = "/usr/bin/defaults"
+        task.arguments = ["write", "com.apple.loginwindow", key, "-bool", value ? "true" : "false"]
+        try? task.run()
+        task.waitUntilExit()
+    }
+    
+    private func restoreResumePrefsIfNeeded() {
+        guard let data = try? Data(contentsOf: resumePrefsFile),
+              let prefs = try? JSONDecoder().decode(ResumePrefs.self, from: data) else { return }
+        if let v = prefs.launchRelaunchApps { writeLoginwindowBool("LoginwindowLaunchesRelaunchApps", value: v) }
+        if let v = prefs.talLogoutSavesState { writeLoginwindowBool("TALLogoutSavesState", value: v) }
+        try? FileManager.default.removeItem(at: resumePrefsFile)
+    }
+    
+    private func suppressNextLoginResume() {
+        if FileManager.default.fileExists(atPath: resumePrefsFile.path) == false {
+            let orig = ResumePrefs(
+                launchRelaunchApps: readLoginwindowBool("LoginwindowLaunchesRelaunchApps"),
+                talLogoutSavesState: readLoginwindowBool("TALLogoutSavesState")
+            )
+            if let encoded = try? JSONEncoder().encode(orig) {
+                try? encoded.write(to: resumePrefsFile, options: .atomic)
+            }
+        }
+        writeLoginwindowBool("LoginwindowLaunchesRelaunchApps", value: false)
+        writeLoginwindowBool("TALLogoutSavesState", value: false)
     }
     
     private func normalizeForToday() {
@@ -467,6 +526,9 @@ You may postpone up to \(remaining) more time(s).
         case .reboot:
             script = #"tell application "System Events" to restart"#
         }
+        
+        // Suppress automatic app/window resume for next login while preserving app-specific session data.
+        suppressNextLoginResume()
         
         // Run AppleScript
         let task = Process()
