@@ -226,18 +226,12 @@ final class ShutdownManager {
     }
     
     private func normalizeForToday() {
-        let today = dateFormatter.string(from: Date())
-        if state.date != today {
-            // Reset for new day
-            state = Self.newState(for: Date())
-            saveState()
-        } else {
-            // Ensure scheduled time is still in future; if not, roll to next day
-            if let sched = isoFormatter.date(from: state.scheduledShutdownISO), sched <= Date() {
-                state = Self.newState(for: Date())
-                saveState()
-            }
-        }
+        // Always create a brand-new shutdown state on each program start,
+        // ignoring any previously persisted schedule or postpones.
+        let now = Date()
+        state = Self.newState(for: now)
+        saveState()
+        print("Reset shutdown state for fresh schedule at startup."); fflush(stdout)
     }
     
     // MARK: - Scheduling
