@@ -1,9 +1,10 @@
 import Foundation
 import AppKit
-import OSLog
+import Darwin
 
-// Unified logger for the utility.
-private let logger = Logger(subsystem: "com.example.daily-shutdown", category: "core")
+// Revert to classic stdout/stderr logging with immediate flush.
+setbuf(stdout, nil)
+setbuf(stderr, nil)
 
 // MARK: - Configuration
 let dailyShutdownHour = 16
@@ -207,9 +208,9 @@ final class ShutdownManager {
            let origDate = isoFormatter.date(from: origISO),
            abs(origDate.timeIntervalSince(shutdownDate)) > 1 {
             let origStr = df.string(from: origDate)
-            logger.info("Scheduled shutdown at \(currentStr, privacy: .public) (original \(origStr, privacy: .public))")
+            print("Scheduled shutdown at \(currentStr) (original \(origStr))"); fflush(stdout)
         } else {
-            logger.info("Scheduled shutdown at \(currentStr, privacy: .public)")
+            print("Scheduled shutdown at \(currentStr)"); fflush(stdout)
         }
     }
     
@@ -276,9 +277,9 @@ final class ShutdownManager {
                 return nil
             }()
             if let orig = originalPlannedStr {
-                logger.notice("Original planned shutdown at \(orig, privacy: .public); current scheduled at \(timeStr, privacy: .public)")
+                print("Original planned shutdown at \(orig); current scheduled at \(timeStr)"); fflush(stdout)
             } else {
-                logger.info("Scheduled shutdown at \(timeStr, privacy: .public)")
+                print("Scheduled shutdown at \(timeStr)"); fflush(stdout)
             }
             alert.informativeText = """
 The system is scheduled to shutdown at \(timeStr).
@@ -453,7 +454,7 @@ You may postpone up to \(remaining) more time(s).
         // Fire actual system command
         let action = state.finalAction
         if opts.dryRun {
-            logger.info("[DRY RUN] Would \(action == .reboot ? "reboot" : "shutdown") now at \(Date(), privacy: .public)")
+            print("[DRY RUN] Would \(action == .reboot ? "reboot" : "shutdown") now at \(Date())"); fflush(stdout)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 exit(0)
             }
