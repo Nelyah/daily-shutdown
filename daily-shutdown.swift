@@ -277,7 +277,7 @@ final class ShutdownManager {
                 print("Scheduled shutdown at \(timeStr)")
             }
             alert.informativeText = """
-The system is scheduled at \(timeStr).
+The system is scheduled to shutdown at \(timeStr).
 \(originalPlannedStr != nil ? "Originally planned at \(originalPlannedStr!)." : "")
 You may postpone up to \(remaining) more time(s).
 """
