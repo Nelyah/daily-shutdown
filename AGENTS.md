@@ -26,6 +26,7 @@
 
 ### 4. Components & Roles
 - `Config.swift`: Parse CLI -> immutable `AppConfig` (warning offsets, postpone interval, limits, flags).
+- `UserPreferences.swift`: Persistent user overrides (daily time, warning offsets) + `ConfigProvider` merging with base config.
 - `State.swift`: `ShutdownState` model + persistence (`StateStore` / `FileStateStore`) + `Clock` + `StateFactory` helpers.
 - `Policy.swift`: Pure scheduling & postpone rules (`ShutdownPolicyType`). No IO, no timers.
 - `Scheduler.swift`: Materializes timers from dates + offsets. Uses `TimerFactory` + `Clock`.
