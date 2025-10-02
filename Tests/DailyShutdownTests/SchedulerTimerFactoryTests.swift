@@ -21,12 +21,19 @@ final class SchedulerTimerFactoryTests: XCTestCase {
         let shutdown = now.addingTimeInterval(3600)
         let offsets = [900, 300, 60]
         scheduler.schedule(shutdownDate: shutdown, warningDate: shutdown.addingTimeInterval(-900), warningOffsets: offsets)
-        let intervals = factory.singles.map { Int(round($0.interval)) }.sorted(by: >)
-        XCTAssertTrue(intervals.contains(3600))
-        XCTAssertTrue(intervals.contains(900))
-        XCTAssertTrue(intervals.contains(300))
-        XCTAssertTrue(intervals.contains(60))
-        XCTAssertEqual(intervals.filter { $0 == 900 }.count, 1)
+        let intervals = factory.singles.map { $0.interval }
+        XCTAssertEqual(intervals.count, 4, "Expected 1 final + 3 warning timers")
+        // Helper to check approximately present
+        func containsApprox(_ target: TimeInterval, tolerance: TimeInterval = 1.0) -> Bool {
+            intervals.contains { abs($0 - target) <= tolerance }
+        }
+        XCTAssertTrue(containsApprox(3600))
+        XCTAssertTrue(containsApprox(900))
+        XCTAssertTrue(containsApprox(300))
+        XCTAssertTrue(containsApprox(60))
+        // Ensure only one approx 900 occurrence
+        let approx900Count = intervals.filter { abs($0 - 900) <= 1.0 }.count
+        XCTAssertEqual(approx900Count, 1)
     }
 
     func testSkipsPastWarningOffsets() throws {
@@ -36,11 +43,12 @@ final class SchedulerTimerFactoryTests: XCTestCase {
         let shutdown = now.addingTimeInterval(240)
         let offsets = [900, 300, 60]
         scheduler.schedule(shutdownDate: shutdown, warningDate: nil, warningOffsets: offsets)
-        let intervals = factory.singles.map { Int(round($0.interval)) }
-        XCTAssertTrue(intervals.contains(240))
-        XCTAssertTrue(intervals.contains(60))
-        XCTAssertFalse(intervals.contains(300))
-        XCTAssertFalse(intervals.contains(900))
+        let intervals = factory.singles.map { $0.interval }
+        func containsApprox(_ target: TimeInterval, tol: TimeInterval = 1.0) -> Bool { intervals.contains { abs($0 - target) <= tol } }
+        XCTAssertTrue(containsApprox(240)) // final
+        XCTAssertTrue(containsApprox(60))  // only viable warning
+        XCTAssertFalse(containsApprox(300))
+        XCTAssertFalse(containsApprox(900))
     }
 
     func testCancelClearsTimers() throws {
