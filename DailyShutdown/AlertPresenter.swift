@@ -1,12 +1,14 @@
 import AppKit
 import Foundation
 
+/// Delegate receiving user decisions from an alert presentation.
 public protocol AlertPresenterDelegate: AnyObject {
     func userChosePostpone()
     func userChoseShutdownNow()
     func userIgnored()
 }
 
+/// Immutable data passed to the UI describing the current shutdown scenario.
 public struct AlertModel {
     public let scheduled: Date
     public let original: Date
@@ -15,6 +17,7 @@ public struct AlertModel {
     public let postponeIntervalMinutes: Int
 }
 
+/// Interface for presenting a shutdown warning to the user.
 public protocol AlertPresenting: AnyObject {
     var delegate: AlertPresenterDelegate? { get set }
     func present(model: AlertModel)
@@ -24,6 +27,8 @@ public final class AlertPresenter: AlertPresenting {
     public weak var delegate: AlertPresenterDelegate?
     public init() {}
 
+    /// Present a blocking (modal) critical alert on the main thread, mapping button presses
+    /// back to delegate callbacks. Buttons differ depending on remaining postpones.
     public func present(model: AlertModel) {
         DispatchQueue.main.async {
             NSApp.setActivationPolicy(.accessory)

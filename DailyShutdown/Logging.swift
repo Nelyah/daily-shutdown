@@ -1,5 +1,6 @@
 import Foundation
 
+/// Simple structured logger abstraction allowing alternate sinks (stdout, file, telemetry).
 public protocol Logger {
     func info(_ message: @autoclosure () -> String)
     func error(_ message: @autoclosure () -> String)
@@ -15,6 +16,7 @@ public final class DefaultLogger: Logger {
         df.timeZone = TimeZone.current
         self.dateFormatter = df
     }
+    /// Enqueue an asynchronous emission to stdout with timestamp & level.
     private func emit(level: String, _ message: String) {
         queue.async { [dateFormatter] in
             let ts = dateFormatter.string(from: Date())

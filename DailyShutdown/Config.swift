@@ -1,5 +1,7 @@
 import Foundation
 
+/// User-supplied runtime flags parsed from the command line. All values are optional;
+/// unset values fall back to defaults contained in `AppConfig`.
 public struct RuntimeOptions: Equatable {
     public var relativeSeconds: Int? = nil      // --in-seconds N
     public var warnLeadSeconds: Int? = nil      // --warn-seconds S
@@ -9,6 +11,8 @@ public struct RuntimeOptions: Equatable {
     public var maxPostpones: Int? = nil         // --max-postpones K
 }
 
+/// Immutable application configuration composed of defaults and `RuntimeOptions` overrides.
+/// This is injected into all agents needing policy / scheduling parameters.
 public struct AppConfig: Equatable {
     public let dailyHour: Int
     public let dailyMinute: Int
@@ -17,18 +21,23 @@ public struct AppConfig: Equatable {
     public let defaultMaxPostpones: Int
     public let options: RuntimeOptions
 
+    /// Effective warning lead time in seconds, using runtime override if present.
     public var effectiveWarningLeadSeconds: Int {
         options.warnLeadSeconds ?? defaultWarningLeadSeconds
     }
+    /// Effective postpone interval (seconds), using runtime override if present.
     public var effectivePostponeIntervalSeconds: Int {
         options.postponeIntervalSeconds ?? defaultPostponeIntervalSeconds
     }
+    /// Effective maximum number of postpones allowed in a shutdown cycle.
     public var effectiveMaxPostpones: Int {
         options.maxPostpones ?? defaultMaxPostpones
     }
 }
 
 public enum CommandLineConfigParser {
+    /// Parse command line `arguments` (defaults to `CommandLine.arguments`) into an `AppConfig`.
+    /// Unspecified flags retain their default values. Unknown flags are ignored.
     public static func parse(arguments: [String] = CommandLine.arguments) -> AppConfig {
         var opts = RuntimeOptions()
         var it = arguments.makeIterator()

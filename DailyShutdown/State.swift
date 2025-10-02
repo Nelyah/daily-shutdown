@@ -1,5 +1,10 @@
 import Foundation
 
+/// Persistent model capturing a single shutdown cycle's scheduling information.
+/// - date: Calendar day (yyyy-MM-dd) representing the cycle start.
+/// - postponesUsed: Number of user postponements consumed.
+/// - scheduledShutdownISO: Current effective shutdown time (ISO8601 with fractional seconds).
+/// - originalScheduledShutdownISO: Immutable original scheduled shutdown time for reference.
 public struct ShutdownState: Codable, Equatable {
     public var date: String          // yyyy-MM-dd for cycle
     public var postponesUsed: Int
@@ -7,6 +12,7 @@ public struct ShutdownState: Codable, Equatable {
     public var originalScheduledShutdownISO: String
 }
 
+/// Abstraction over persistence of `ShutdownState` allowing different backends (file, memory, network).
 public protocol StateStore {
     func load() -> ShutdownState?
     func save(_ state: ShutdownState)
@@ -19,10 +25,12 @@ public final class FileStateStore: StateStore {
         try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
         self.fileURL = directory.appendingPathComponent("state.json")
     }
+    /// Load the most recently saved state from disk; returns nil if missing or decode fails.
     public func load() -> ShutdownState? {
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
         return try? JSONDecoder().decode(ShutdownState.self, from: data)
     }
+    /// Persist the given state atomically to disk. Errors are ignored (best-effort).
     public func save(_ state: ShutdownState) {
         if let data = try? JSONEncoder().encode(state) {
             try? data.write(to: fileURL, options: .atomic)
@@ -30,6 +38,7 @@ public final class FileStateStore: StateStore {
     }
 }
 
+/// Time source abstraction to enable deterministic tests via injected clocks.
 public protocol Clock {
     func now() -> Date
 }
@@ -37,6 +46,7 @@ public struct SystemClock: Clock {
     // Explicit public initializer so it can be used as a default parameter in
     // public initializers elsewhere.
     public init() {}
+    /// Returns the current wall-clock date/time (`Date()`).
     public func now() -> Date { Date() }
 }
 
@@ -53,6 +63,9 @@ public enum StateFactory {
         return f
     }()
 
+    /// Create a new `ShutdownState` from scratch given the current `now` and effective configuration.
+    /// If `--in-seconds` was specified the shutdown time is relative. Otherwise the next configured
+    /// daily hour/minute (today or tomorrow if already passed) is chosen.
     public static func newState(now: Date, config: AppConfig) -> ShutdownState {
         if let rel = config.options.relativeSeconds {
             let shutdownDate = now.addingTimeInterval(TimeInterval(rel))
@@ -77,6 +90,8 @@ public enum StateFactory {
         )
     }
 
+    /// Format a `Date` into the canonical ISO8601 representation used in persisted state.
     public static func isoDate(_ date: Date) -> String { isoFormatter.string(from: date) }
+    /// Parse a stored ISO8601 timestamp back into a `Date`.
     public static func parseISO(_ iso: String) -> Date? { isoFormatter.date(from: iso) }
 }

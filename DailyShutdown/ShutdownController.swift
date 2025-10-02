@@ -1,6 +1,9 @@
 import Foundation
 import AppKit
 
+/// Orchestrates the full shutdown cycle: loading/creating state, computing policy plans,
+/// scheduling timers, presenting alerts, handling user actions, and initiating system shutdown.
+/// Thread-safety: state mutations are serialized via `stateQueue`.
 public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate {
     private let config: AppConfig
     private let stateStore: StateStore
@@ -14,6 +17,8 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
 
     private let workDir: URL
 
+    /// Create a controller with injected agents; defaults are provided for production runtime.
+    /// State is initialized immediately (and persisted unless `--no-persist`). Delegates are then wired.
     public init(config: AppConfig,
                 stateStore: StateStore? = nil,
                 clock: Clock = SystemClock(),
@@ -44,11 +49,13 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
       		scheduler.delegate = self
     }
 
+    /// Begin scheduling according to current state and log startup information.
     public func start() {
         reschedule()
         logStartup()
     }
 
+    /// Recompute plan & schedule timers (executed on `stateQueue`).
     private func reschedule() {
         stateQueue.async { [self] in
             let now = clock.now()
@@ -57,6 +64,7 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
         }
     }
 
+    /// Emit initial schedule log for observability.
     private func logStartup() {
         if let date = StateFactory.parseISO(state.scheduledShutdownISO) {
             let df = DateFormatter(); df.timeStyle = .short
@@ -65,6 +73,7 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
     }
 
     // MARK: SchedulerDelegate
+    /// Warning timer fired: present alert with current model details.
     public func warningDue() {
         stateQueue.async { [self] in
             guard let shutdownDate = StateFactory.parseISO(state.scheduledShutdownISO),
@@ -80,11 +89,13 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
         }
     }
 
+    /// Final shutdown timer fired: initiate shutdown sequence.
     public func shutdownDue() {
         performShutdown()
     }
 
     // MARK: AlertPresenterDelegate
+    /// User requested a postpone: validate with policy then mutate state & reschedule.
     public func userChosePostpone() {
         stateQueue.async { [self] in
             guard policy.canPostpone(state: state, config: config) else { return }
@@ -95,9 +106,12 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
         }
     }
 
+    /// User chose immediate shutdown.
     public func userChoseShutdownNow() { performShutdown() }
+    /// User dismissed/ignored the alert; no action needed.
     public func userIgnored() { /* no-op */ }
 
+    /// Perform (or simulate) system shutdown, roll state into next cycle, and schedule again.
     private func performShutdown() {
         stateQueue.async { [self] in
             log("Initiating shutdown dryRun=\(config.options.dryRun)")

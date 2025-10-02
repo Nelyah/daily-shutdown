@@ -11,6 +11,8 @@ import Darwin
 // Entry point: responsibilities are now split into separate modules (Config, State, Policy, Scheduler, Alert, SystemActions, Logging).
 // This file intentionally contains only startup wiring.
 
+/// Bootstraps application dependencies, parses runtime options, instantiates the controller
+/// and enters the main run loop. Designed to keep side effects localized.
 public func runDailyShutdownApp() {
     // Immediate flush for print output.
     setbuf(stdout, nil)
