@@ -1,25 +1,105 @@
-# AGENTS.md
+## DailyShutdown Architecture (Concise Guide)
 
-Authoritative guide to the autonomous (agent-style) components of the DailyShutdown application. This document explains roles, boundaries, collaboration patterns, and extension guidelines following SOLID principles.
+### 1. Non‑Negotiable Principles
+- SOLID: each file has one reason to change; extend via new protocol conformers, not edits to orchestrator.
+- Pure core logic: policy & scheduling decisions produce data only; side-effects isolated at edges.
+- Dependency Inversion: controller sees only protocols (`SystemActions`, `AlertPresenting`, `StateStore`, `Clock`, `ShutdownPolicyType`, `Logger`, `TimerFactory`).
+- Determinism & Testability: time, timers, system calls, UI abstracted.
+- Config Driven: warning timings come solely from `--warn-offsets` (no hard-coded magic numbers in logic).
+- Documentation: every public type/function has a doc comment explaining role + invariants.
+- Quality Gate: every change has unit tests; commits use Conventional Commit spec.
+
+### 2. Required Practices
+1. Write / update unit tests with each functional change.
+2. Add doc comments for any new symbol (public or internal if non-trivial).
+3. Use Conventional Commits (e.g. `feat:`, `fix:`, `refactor:`, `test:`).
+4. New behaviors enter via new protocol implementations; avoid widening existing protocols unless essential.
+
+### 3. Execution Flow
+1. `main` parses CLI → `AppConfig` (includes warning offsets list).
+2. `ShutdownController` creates or loads `ShutdownState`.
+3. `ShutdownPolicy` returns `(shutdownDate, primaryWarningDate?)` (pure).
+4. `Scheduler` turns final date + configured offsets into timers via `TimerFactory` & `Clock`.
+5. Warning timer → `AlertPresenter` shows alert; user selects postpone / shutdown / ignore.
+6. Postpone → policy mutates state (increment + shift) → persist (if enabled) → reschedule.
+7. Final timer → `SystemActions.shutdown()` (or dry-run rollover) → new cycle state.
+
+### 4. Components & Roles
+- `Config.swift`: Parse CLI -> immutable `AppConfig` (warning offsets, postpone interval, limits, flags).
+- `State.swift`: `ShutdownState` model + persistence (`StateStore` / `FileStateStore`) + `Clock` + `StateFactory` helpers.
+- `Policy.swift`: Pure scheduling & postpone rules (`ShutdownPolicyType`). No IO, no timers.
+- `Scheduler.swift`: Materializes timers from dates + offsets. Uses `TimerFactory` + `Clock`.
+- `TimerFactory` (in `Scheduler.swift`): Creates cancellable one-shot timers (production = GCD, test = mock).
+- `AlertPresenter.swift`: UI alert; delegates user decisions.
+- `SystemActions.swift`: Encapsulates system shutdown side-effect (AppleScript implementation provided).
+- `Logging.swift`: Asynchronous logging via `Logger` protocol.
+- `ShutdownController.swift`: Orchestrates, serializes state mutations, invokes policy, scheduler, UI, and system actions.
+- `main.swift`: Bootstrap only.
+
+### 5. Project Structure
+```
+Package.swift
+DailyShutdown/
+  main.swift
+  Config.swift
+  State.swift
+  Policy.swift
+  Scheduler.swift        (includes TimerFactory abstraction)
+  AlertPresenter.swift
+  SystemActions.swift
+  Logging.swift
+  ShutdownController.swift
+Tests/DailyShutdownTests/
+  ShutdownPolicyTests.swift
+  PolicyBehaviorTests.swift
+  SchedulerTimerFactoryTests.swift
+AGENTS.md
+README.md
+```
+
+### 6. Interaction Graph
+`main` → `ShutdownController`
+`ShutdownController` → (`StateStore`, `Clock`, `ShutdownPolicyType`, `Scheduler`, `AlertPresenting`, `SystemActions`, `Logger`, config warning offsets)
+`Scheduler` → (delegate callbacks to Controller)
+`AlertPresenter` → (delegate callbacks to Controller)
+`ShutdownPolicy` → (pure; uses state + config + clock date)
+
+### 7. Critical Invariants
+- `originalScheduledShutdownISO` immutable per cycle.
+- Each postpone strictly increases `scheduledShutdownISO` by configured interval.
+- `postponesUsed ≤ effectiveMaxPostpones`.
+- Primary warning = shutdownDate - largest warning offset (clamped to now if past).
+- Only future offsets yield timers; duplicates excluded.
+
+### 8. Extension Points
+- New shutdown mechanism → implement `SystemActions`.
+- Alternate UI channel → implement `AlertPresenting`.
+- Custom scheduling rules → implement `ShutdownPolicyType` (stay pure).
+- Persistence backend → implement `StateStore`.
+- Time control → implement `Clock`.
+- Alternate timer backend → implement `TimerFactory`.
+- Logging sink → implement `Logger`.
+
+### 9. Testing Expectations
+- Mock protocols, inject `FixedClock` & mock `TimerFactory` (no sleeps).
+- Assert invariants (state progression, timer counts, monotonic schedule, deduped offsets).
+- Add tests for any new CLI flags and policy rules.
+
+### 10. Contribution Checklist
+1. Define minimal protocol (if needed) & implementation.
+2. Add doc comments for new/changed symbols.
+3. Add focused unit tests (prefer pure logic isolation).
+4. Maintain dependency direction (no cycles).
+5. Commit with Conventional Commit message.
+6. Update this file ONLY if protocol surface / architecture changes.
+
+### 11. Non-Goals
+- Cross-machine sync, multi-user, complex UI flows.
+
+### 12. Summary
+Small, documented, protocol-driven components + strict invariants + exhaustive unit tests = safe evolution.
 
 ---
-## 1. Purpose & Scope
-DailyShutdown schedules a daily (or relative) system shutdown with user warnings and controlled postpones. The codebase is intentionally decomposed into small, substitutable "agents" (objects behind protocols) to:
-- Enable safe extension without modifying core logic (Open/Closed)
-- Isolate responsibilities (Single Responsibility)
-- Invert volatile dependencies (Dependency Inversion)
-- Support mocking for tests (Liskov + Interface Segregation)
-- Keep side-effects at the edges (system shutdown, UI, disk persistence)
-
----
-## 2. High-Level Flow (Narrative)
-1. main.swift builds configuration and instantiates `ShutdownController`.
-2. Controller creates/loads state for the current shutdown cycle.
-3. Policy derives a schedule plan (primary warning + final times).
-4. Scheduler sets dispatch timers (primary + additional configured warning offsets).
-5. When warning timer fires, AlertPresenter prompts the user.
-6. User action may trigger postpone (state mutation + reschedule) or immediate shutdown.
-7. Shutdown executes via `SystemActions`, then a new cycle state is prepared.
 
 ---
 ## 3. Agent Catalog (File → Responsibility → Protocols → Depends On)
