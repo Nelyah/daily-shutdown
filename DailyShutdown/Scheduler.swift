@@ -9,7 +9,8 @@ public protocol SchedulerDelegate: AnyObject {
 /// Schedules dispatch timers for warning & shutdown events. Owns its private queue.
 public final class Scheduler {
     public weak var delegate: SchedulerDelegate?
-    private var warningTimer: DispatchSourceTimer?
+    // Multiple warning timers (15m, 5m, 1m) before final shutdown.
+    private var warningTimers: [DispatchSourceTimer] = []
     private var finalTimer: DispatchSourceTimer?
     private let queue = DispatchQueue(label: "scheduler.queue", qos: .userInitiated)
 
@@ -32,26 +33,40 @@ public final class Scheduler {
         finalTimer = final
         final.activate()
 
-        // Optional warning timer.
-        if let w = warningDate {
-            // Seconds until warning (never negative).
-            let warningInterval = max(0, w.timeIntervalSince(now)) // seconds
+        // Compute desired warning thresholds (15m, 5m, 1m) relative to final shutdown.
+        let thresholds: [TimeInterval] = [15*60, 5*60, 1*60]
+        var plannedWarningDates: [Date] = []
+        for t in thresholds {
+            let candidate = shutdownDate.addingTimeInterval(-t)
+            if candidate > now { plannedWarningDates.append(candidate) }
+        }
+        // Include provided explicit warningDate if present (legacy policy output) and still future.
+        if let explicit = warningDate, explicit > now, !plannedWarningDates.contains(where: { abs($0.timeIntervalSince(explicit)) < 0.5 }) {
+            plannedWarningDates.append(explicit)
+        }
+        // Sort ascending to fire earliest first.
+        plannedWarningDates.sort()
+        // Create timers for each planned warning date.
+        for wd in plannedWarningDates {
+            let interval = max(0, wd.timeIntervalSince(now))
             let warn = DispatchSource.makeTimerSource(queue: queue)
-            warn.schedule(deadline: .now() + warningInterval)
+            warn.schedule(deadline: .now() + interval)
             warn.setEventHandler { [weak self] in self?.delegate?.warningDue() }
-            warningTimer = warn
+            warningTimers.append(warn)
             warn.activate()
         }
+
         // Log with explicit ISO8601 timestamp of final shutdown and optional warning.
         let iso = ISO8601DateFormatter()
         let finalISO = iso.string(from: shutdownDate)
-        let warningISO = warningDate.map { iso.string(from: $0) } ?? "nil"
-        log("Scheduler: finalDate=\(finalISO) in=\(String(format: "%.2f", finalInterval))s warningAt=\(warningISO)")
+        let warningList = plannedWarningDates.map { iso.string(from: $0) }.joined(separator: ", ")
+        log("Scheduler: finalDate=\(finalISO) in=\(String(format: "%.2f", finalInterval))s warnings=[\(warningList)]")
     }
 
     /// Cancel any in-flight timers (idempotent).
     public func cancel() {
-        warningTimer?.cancel(); warningTimer = nil
+        warningTimers.forEach { $0.cancel() }
+        warningTimers.removeAll()
         finalTimer?.cancel(); finalTimer = nil
     }
 }

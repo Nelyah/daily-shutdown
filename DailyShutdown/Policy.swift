@@ -2,7 +2,8 @@ import Foundation
 
 /// Result of evaluating a scheduling policy for the current state.
 /// - shutdownDate: The definitive time the system should shut down.
-/// - warningDate: Optional time to present a user alert (may be nil if not needed).
+/// - warningDate: Optional primary warning time (may be nil). Additional staged warnings
+///   (e.g., 15m/5m/1m) are derived by the Scheduler to preserve Open/Closed segregation.
 public struct SchedulePlan: Equatable {
     public let shutdownDate: Date
     public let warningDate: Date?
