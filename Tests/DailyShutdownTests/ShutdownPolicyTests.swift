@@ -102,11 +102,11 @@ final class ControllerTests: XCTestCase {
         controller.start()
         // Simulate user postpone
         controller.userChosePostpone()
-        // Allow async stateQueue to execute
-        let exp = expectation(description: "wait")
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { exp.fulfill() }
+        let exp = expectation(description: "await state mutation")
+        controller._testCurrentState { st in
+            XCTAssertEqual(st.postponesUsed, 1)
+            exp.fulfill()
+        }
         wait(for: [exp], timeout: 2.0)
-        guard let saved = store.stored else { return XCTFail("Expected persisted state") }
-        XCTAssertEqual(saved.postponesUsed, 1)
     }
 }

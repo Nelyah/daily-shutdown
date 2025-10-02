@@ -134,4 +134,11 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { exit(0) }
         }
     }
+
+#if DEBUG
+    /// Test-only helper: asynchronously provide the current in-memory state snapshot.
+    public func _testCurrentState(completion: @escaping (ShutdownState) -> Void) {
+        stateQueue.async { completion(self.state) }
+    }
+#endif
 }
