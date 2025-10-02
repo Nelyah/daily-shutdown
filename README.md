@@ -26,7 +26,7 @@ swift test
 ```
 
 ## Extend
-Implement a protocol (`SystemActions`, `AlertPresenting`, `ShutdownPolicyType`, `StateStore`, `Clock`, `TimerFactory`, `Logger`) and inject via `ShutdownController`.
+Create a new type conforming to one of the extension protocols (`SystemActions`, `AlertPresenting`, `ShutdownPolicyType`, `StateStore`, `Clock`, `TimerFactory`, `Logger`) and pass it into the `ShutdownController` initializer. Do not modify existing core logic—extend via new implementations.
 
 ## Safety
 Use `--dry-run` during development (actual shutdown via AppleScript).
