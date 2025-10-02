@@ -14,11 +14,14 @@ public final class Scheduler {
     private var finalTimer: CancellableTimer?
     private let queue: DispatchQueue
     private let timerFactory: TimerFactory
+    private let clock: Clock
 
     public init(queue: DispatchQueue = DispatchQueue(label: "scheduler.queue", qos: .userInitiated),
-                timerFactory: TimerFactory = GCDTimerFactory()) {
+                timerFactory: TimerFactory = GCDTimerFactory(),
+                clock: Clock = SystemClock()) {
         self.queue = queue
         self.timerFactory = timerFactory
+        self.clock = clock
     }
 
     /// Schedule (replacing any existing timers) a shutdown at `shutdownDate` and optional warning.
@@ -27,7 +30,7 @@ public final class Scheduler {
         cancel()
 
         // Capture a single reference time so both intervals are derived consistently.
-        let now = Date()
+        let now = clock.now()
         // Seconds until shutdown (never negative).
         let finalInterval = max(0, shutdownDate.timeIntervalSince(now)) // seconds
 

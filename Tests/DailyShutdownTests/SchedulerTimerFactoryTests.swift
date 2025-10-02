@@ -16,13 +16,14 @@ final class MockTimerFactory: TimerFactory {
 final class SchedulerTimerFactoryTests: XCTestCase {
     func testSchedulesExpectedWarningIntervals() throws {
         let factory = MockTimerFactory()
-        let scheduler = Scheduler(queue: DispatchQueue(label: "test.queue"), timerFactory: factory)
-        let now = Date()
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let scheduler = Scheduler(queue: DispatchQueue(label: "test.queue"), timerFactory: factory, clock: FixedClock(fixed: now))
         let shutdown = now.addingTimeInterval(3600)
         let offsets = [900, 300, 60]
         scheduler.schedule(shutdownDate: shutdown, warningDate: shutdown.addingTimeInterval(-900), warningOffsets: offsets)
-        let intervals = factory.singles.map { $0.interval }
-        XCTAssertEqual(intervals.count, 4, "Expected 1 final + 3 warning timers")
+        let intervals = factory.singles.map { $0.interval }.sorted(by: >)
+        // Expect final first (largest interval) then warnings; total 4 timers.
+        XCTAssertEqual(intervals.count, 4)
         // Helper to check approximately present
         func containsApprox(_ target: TimeInterval, tolerance: TimeInterval = 1.0) -> Bool {
             intervals.contains { abs($0 - target) <= tolerance }
@@ -38,8 +39,8 @@ final class SchedulerTimerFactoryTests: XCTestCase {
 
     func testSkipsPastWarningOffsets() throws {
         let factory = MockTimerFactory()
-        let scheduler = Scheduler(queue: DispatchQueue(label: "test.queue"), timerFactory: factory)
-        let now = Date()
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        let scheduler = Scheduler(queue: DispatchQueue(label: "test.queue"), timerFactory: factory, clock: FixedClock(fixed: now))
         let shutdown = now.addingTimeInterval(240)
         let offsets = [900, 300, 60]
         scheduler.schedule(shutdownDate: shutdown, warningDate: nil, warningOffsets: offsets)
@@ -53,8 +54,8 @@ final class SchedulerTimerFactoryTests: XCTestCase {
 
     func testCancelClearsTimers() throws {
         let factory = MockTimerFactory()
-        let scheduler = Scheduler(queue: DispatchQueue(label: "test.queue"), timerFactory: factory)
-        let now = Date()
+        let now = Date(timeIntervalSince1970: 3_000_000)
+        let scheduler = Scheduler(queue: DispatchQueue(label: "test.queue"), timerFactory: factory, clock: FixedClock(fixed: now))
         scheduler.schedule(shutdownDate: now.addingTimeInterval(100), warningDate: nil, warningOffsets: [30,10])
         XCTAssertFalse(factory.singles.isEmpty)
         scheduler.cancel()

@@ -69,8 +69,8 @@ final class ShutdownPolicyTests: XCTestCase {
 
 final class SchedulerTests: XCTestCase {
     func testSchedulesMultipleWarningOffsets() throws {
-        let sched = Scheduler()
         let now = Date()
+        let sched = Scheduler(clock: FixedClock(fixed: now))
         let shutdown = now.addingTimeInterval(1000)
         // We cannot easily access internal timers; instead rely on log? For deterministic unit test, restructure.
         // For now, just ensure no crash and leverage reflection of method by wrapping schedule in expectation.
