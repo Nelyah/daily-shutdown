@@ -51,9 +51,6 @@ public enum CommandLineConfigParser {
             switch a {
             case "--in-seconds":
                 if let v = it.next(), let s = Int(v) { opts.relativeSeconds = s }
-            case "--warn-seconds":
-                // Backwards compatibility: single legacy lead seconds becomes a one-element list.
-                if let v = it.next(), let s = Int(v) { opts.warnOffsets = [s] }
             case "--warn-offsets":
                 if let v = it.next() {
                     let parts = v.split{ $0 == "," || $0 == " " }.compactMap { Int($0) }
