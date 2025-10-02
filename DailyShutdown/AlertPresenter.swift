@@ -49,9 +49,16 @@ You may postpone up to \(remaining) more time(s).
 """
             if model.postponesUsed < model.maxPostpones {
                 alert.addButton(withTitle: "Postpone \(model.postponeIntervalMinutes) min")
+                // Capture shutdown button to mark as destructive.
+                let shutdownButton = alert.addButton(withTitle: "Shutdown Now")
+                if #available(macOS 11.0, *) { shutdownButton.hasDestructiveAction = true }
+                alert.addButton(withTitle: "Ignore")
+            } else {
+                // No postpone available; first button is shutdown (destructive).
+                let shutdownButton = alert.addButton(withTitle: "Shutdown Now")
+                if #available(macOS 11.0, *) { shutdownButton.hasDestructiveAction = true }
+                alert.addButton(withTitle: "Ignore")
             }
-            alert.addButton(withTitle: "Shutdown Now")
-            alert.addButton(withTitle: "Ignore")
 
             let response = alert.runModal()
             if model.postponesUsed < model.maxPostpones {
