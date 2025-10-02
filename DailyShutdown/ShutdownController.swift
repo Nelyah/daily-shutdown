@@ -60,7 +60,11 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
         stateQueue.async { [self] in
             let now = clock.now()
             guard let plan = policy.plan(for: state, config: config, now: now) else { return }
-            scheduler.schedule(shutdownDate: plan.shutdownDate, warningDate: plan.warningDate)
+            scheduler.schedule(
+                shutdownDate: plan.shutdownDate,
+                warningDate: plan.warningDate,
+                stagedWarningOffsets: config.effectiveStagedWarningOffsets
+            )
         }
     }
 

@@ -18,7 +18,7 @@ public final class Scheduler {
 
     /// Schedule (replacing any existing timers) a shutdown at `shutdownDate` and optional warning.
     /// Intervals are clamped to zero (fire immediately) if already elapsed.
-    public func schedule(shutdownDate: Date, warningDate: Date?) {
+    public func schedule(shutdownDate: Date, warningDate: Date?, stagedWarningOffsets: [Int] = []) {
         cancel()
 
         // Capture a single reference time so both intervals are derived consistently.
@@ -33,8 +33,8 @@ public final class Scheduler {
         finalTimer = final
         final.activate()
 
-        // Compute desired warning thresholds (15m, 5m, 1m) relative to final shutdown.
-        let thresholds: [TimeInterval] = [15*60, 5*60, 1*60]
+        // Compute staged warning thresholds (seconds before shutdown) relative to final shutdown.
+        let thresholds: [TimeInterval] = stagedWarningOffsets.map { TimeInterval($0) }
         var plannedWarningDates: [Date] = []
         for t in thresholds {
             let candidate = shutdownDate.addingTimeInterval(-t)

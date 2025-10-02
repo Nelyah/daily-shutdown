@@ -19,6 +19,8 @@ public struct AppConfig: Equatable {
     public let defaultWarningLeadSeconds: Int
     public let defaultPostponeIntervalSeconds: Int
     public let defaultMaxPostpones: Int
+    /// Default staged warning offsets (seconds before shutdown). Ordered high->low.
+    public let defaultStagedWarningOffsets: [Int]
     public let options: RuntimeOptions
 
     /// Effective warning lead time in seconds, using runtime override if present.
@@ -33,6 +35,8 @@ public struct AppConfig: Equatable {
     public var effectiveMaxPostpones: Int {
         options.maxPostpones ?? defaultMaxPostpones
     }
+    /// Effective staged warning offsets. Currently unconditional (no CLI override yet).
+    public var effectiveStagedWarningOffsets: [Int] { defaultStagedWarningOffsets }
 }
 
 public enum CommandLineConfigParser {
@@ -66,6 +70,7 @@ public enum CommandLineConfigParser {
             defaultWarningLeadSeconds: 15 * 60,
             defaultPostponeIntervalSeconds: 15 * 60,
             defaultMaxPostpones: 3,
+            defaultStagedWarningOffsets: [15*60, 5*60, 60],
             options: opts
         )
     }
