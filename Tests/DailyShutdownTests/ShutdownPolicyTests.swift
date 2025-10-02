@@ -5,13 +5,6 @@ import XCTest
 struct FixedClock: Clock { var fixed: Date; func now() -> Date { fixed } }
 final class MockSystemActions: SystemActions { private(set) var shutdownCount = 0; func shutdown() { shutdownCount += 1 } }
 final class InMemoryStateStore: StateStore { var stored: ShutdownState?; func load() -> ShutdownState? { stored }; func save(_ state: ShutdownState) { stored = state } }
-final class CapturingScheduler: Scheduler {
-    struct Call { let shutdown: Date; let warning: Date?; let offsets: [Int] }
-    private(set) var calls: [Call] = []
-    override func schedule(shutdownDate: Date, warningDate: Date?, warningOffsets: [Int] = []) {
-        calls.append(.init(shutdown: shutdownDate, warning: warningDate, offsets: warningOffsets))
-    }
-}
 final class CapturingAlertPresenter: AlertPresenting {
     weak var delegate: AlertPresenterDelegate?
     private(set) var presented: [AlertModel] = []
@@ -47,7 +40,11 @@ final class ShutdownPolicyTests: XCTestCase {
         let plan = try XCTUnwrap(policy.plan(for: state, config: config, now: now))
         let expectedLead = TimeInterval(600)
         XCTAssertEqual(plan.shutdownDate.timeIntervalSince(now), 600, accuracy: 1.0)
-        XCTAssertEqual(plan.warningDate?.timeIntervalSince(now), 0, accuracy: 0.2, "Largest offset equals shutdown interval so warning should clamp to now")
+        if let warningDate = plan.warningDate {
+            XCTAssertEqual(warningDate.timeIntervalSince(now), 0, accuracy: 0.2, "Largest offset equals shutdown interval so warning should clamp to now")
+        } else {
+            XCTFail("Expected a clamped warning date")
+        }
         XCTAssertEqual(config.primaryWarningLeadSeconds, Int(expectedLead))
     }
 
@@ -90,7 +87,7 @@ final class ControllerTests: XCTestCase {
         let clock = FixedClock(fixed: now)
         let config = makeConfig(relativeSeconds: 3600, warnOffsets: [900,300,60])
         let store = InMemoryStateStore()
-        let scheduler = CapturingScheduler()
+        let scheduler = Scheduler()
         let actions = MockSystemActions()
         let presenter = CapturingAlertPresenter()
         let controller = ShutdownController(
