@@ -22,6 +22,7 @@ final class SchedulerTimerFactoryTests: XCTestCase {
         let offsets = [900, 300, 60]
         scheduler.schedule(shutdownDate: shutdown, warningDate: shutdown.addingTimeInterval(-900), warningOffsets: offsets)
         let intervals = factory.singles.map { $0.interval }.sorted(by: >)
+        print("[DEBUG] testSchedulesExpectedWarningIntervals captured intervals=\(intervals)")
         // Expect final first (largest interval) then warnings; total 4 timers.
         XCTAssertEqual(intervals.count, 4)
         // Helper to check approximately present
@@ -45,6 +46,7 @@ final class SchedulerTimerFactoryTests: XCTestCase {
         let offsets = [900, 300, 60]
         scheduler.schedule(shutdownDate: shutdown, warningDate: nil, warningOffsets: offsets)
         let intervals = factory.singles.map { $0.interval }
+        print("[DEBUG] testSkipsPastWarningOffsets captured intervals=\(intervals)")
         func containsApprox(_ target: TimeInterval, tol: TimeInterval = 1.0) -> Bool { intervals.contains { abs($0 - target) <= tol } }
         XCTAssertTrue(containsApprox(240)) // final
         XCTAssertTrue(containsApprox(60))  // only viable warning
@@ -57,6 +59,7 @@ final class SchedulerTimerFactoryTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 3_000_000)
         let scheduler = Scheduler(queue: DispatchQueue(label: "test.queue"), timerFactory: factory, clock: FixedClock(fixed: now))
         scheduler.schedule(shutdownDate: now.addingTimeInterval(100), warningDate: nil, warningOffsets: [30,10])
+        print("[DEBUG] testCancelClearsTimers captured intervals=\(factory.singles.map { $0.interval })")
         XCTAssertFalse(factory.singles.isEmpty)
         scheduler.cancel()
         scheduler.cancel() // should remain idempotent / no crash
