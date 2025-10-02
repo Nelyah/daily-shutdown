@@ -19,22 +19,34 @@ public final class Scheduler {
     /// Intervals are clamped to zero (fire immediately) if already elapsed.
     public func schedule(shutdownDate: Date, warningDate: Date?) {
         cancel()
+
+        // Capture a single reference time so both intervals are derived consistently.
         let now = Date()
-        let finalInterval = max(0, shutdownDate.timeIntervalSince(now))
+        // Seconds until shutdown (never negative).
+        let finalInterval = max(0, shutdownDate.timeIntervalSince(now)) // seconds
+
+        // Final shutdown timer.
         let final = DispatchSource.makeTimerSource(queue: queue)
         final.schedule(deadline: .now() + finalInterval)
         final.setEventHandler { [weak self] in self?.delegate?.shutdownDue() }
         finalTimer = final
         final.activate()
+
+        // Optional warning timer.
         if let w = warningDate {
-            let warningInterval = max(0, w.timeIntervalSince(now))
+            // Seconds until warning (never negative).
+            let warningInterval = max(0, w.timeIntervalSince(now)) // seconds
             let warn = DispatchSource.makeTimerSource(queue: queue)
             warn.schedule(deadline: .now() + warningInterval)
             warn.setEventHandler { [weak self] in self?.delegate?.warningDue() }
             warningTimer = warn
             warn.activate()
         }
-        log("Scheduler: scheduled shutdown in \(String(format: "%.2f", finalInterval))s warningAt?=\(String(describing: warningDate))")
+        // Log with explicit ISO8601 timestamp of final shutdown and optional warning.
+        let iso = ISO8601DateFormatter()
+        let finalISO = iso.string(from: shutdownDate)
+        let warningISO = warningDate.map { iso.string(from: $0) } ?? "nil"
+        log("Scheduler: finalDate=\(finalISO) in=\(String(format: "%.2f", finalInterval))s warningAt=\(warningISO)")
     }
 
     /// Cancel any in-flight timers (idempotent).
