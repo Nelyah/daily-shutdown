@@ -23,7 +23,8 @@ let package = Package(
                 "AlertPresenter.swift",
                 "SystemActions.swift",
                 "Logging.swift",
-                "ShutdownController.swift"
+                "ShutdownController.swift",
+                "UserPreferences.swift"
             ],
             resources: []
         ),
