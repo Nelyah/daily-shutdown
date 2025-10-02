@@ -63,7 +63,7 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
             scheduler.schedule(
                 shutdownDate: plan.shutdownDate,
                 warningDate: plan.warningDate,
-                stagedWarningOffsets: config.effectiveStagedWarningOffsets
+                warningOffsets: config.effectiveWarningOffsets
             )
         }
     }

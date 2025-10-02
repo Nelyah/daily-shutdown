@@ -26,11 +26,10 @@ public final class ShutdownPolicy: ShutdownPolicyType {
     /// If the warning time would be in the past, it is clamped to `now` (immediate presentation).
     public func plan(for state: ShutdownState, config: AppConfig, now: Date) -> SchedulePlan? {
         guard let shutdownDate = StateFactory.parseISO(state.scheduledShutdownISO) else { return nil }
-        let warningLead = TimeInterval(config.effectiveWarningLeadSeconds)
         var warning: Date? = nil
-        if canPostpone(state: state, config: config) {
-            let candidate = shutdownDate.addingTimeInterval(-warningLead)
-            if candidate > now { warning = candidate } else { warning = now } // present immediately if passed
+        if canPostpone(state: state, config: config), let lead = config.primaryWarningLeadSeconds {
+            let candidate = shutdownDate.addingTimeInterval(-TimeInterval(lead))
+            warning = candidate > now ? candidate : now // immediate if already passed
         }
         return SchedulePlan(shutdownDate: shutdownDate, warningDate: warning)
     }
