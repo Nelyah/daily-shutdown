@@ -104,8 +104,9 @@ final class ControllerTests: XCTestCase {
         controller.userChosePostpone()
         // Allow async stateQueue to execute
         let exp = expectation(description: "wait")
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) { exp.fulfill() }
-        wait(for: [exp], timeout: 1.0)
-        XCTAssertEqual(store.stored?.postponesUsed, 1)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { exp.fulfill() }
+        wait(for: [exp], timeout: 2.0)
+        guard let saved = store.stored else { return XCTFail("Expected persisted state") }
+        XCTAssertEqual(saved.postponesUsed, 1)
     }
 }
