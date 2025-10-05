@@ -121,7 +121,7 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
                 original: originalDate,
                 postponesUsed: state.postponesUsed,
                 maxPostpones: config.effectiveMaxPostpones,
-                postponeIntervalMinutes: Int(round(Double(config.effectivePostponeIntervalSeconds)/60.0))
+                postponeIntervalSeconds: config.effectivePostponeIntervalSeconds
             )
             warningAlertActive = true
             warningPresentedThisCycle = true

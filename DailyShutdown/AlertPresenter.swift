@@ -14,7 +14,10 @@ public struct AlertModel {
     public let original: Date
     public let postponesUsed: Int
     public let maxPostpones: Int
-    public let postponeIntervalMinutes: Int
+    /// Raw postpone interval in seconds (from effective configuration at alert time).
+    public let postponeIntervalSeconds: Int
+    /// Convenience minute rounding for textual display when >= 2 minutes.
+    public var postponeIntervalMinutes: Int { Int(round(Double(postponeIntervalSeconds)/60.0)) }
 }
 
 /// Interface for presenting a shutdown warning to the user.
@@ -47,6 +50,15 @@ Original plan: \(originalStr).
 """
     }
 
+    /// Compute the postpone button title given the interval.
+    /// - If interval < 120s show seconds (e.g., "Postpone 90 sec").
+    /// - Otherwise show rounded minutes (e.g., "Postpone 5 min").
+    static func postponeButtonTitle(seconds: Int) -> String {
+        if seconds < 120 { return "Postpone \(seconds) sec" }
+        let mins = Int(round(Double(seconds)/60.0))
+        return "Postpone \(mins) min"
+    }
+
     /// Present a blocking (modal) critical alert on the main thread, mapping button presses
     /// back to delegate callbacks. Buttons differ depending on remaining postpones.
     public func present(model: AlertModel) {
@@ -60,7 +72,7 @@ Original plan: \(originalStr).
             alert.messageText = "Scheduled System Shutdown"
             alert.informativeText = Self.buildInformativeText(model: model, dateFormatter: df)
             if model.postponesUsed < model.maxPostpones {
-                alert.addButton(withTitle: "Postpone \(model.postponeIntervalMinutes) min")
+                alert.addButton(withTitle: Self.postponeButtonTitle(seconds: model.postponeIntervalSeconds))
                 // Capture shutdown button to mark as destructive.
                 let shutdownButton = alert.addButton(withTitle: "Shutdown Now")
                 if #available(macOS 11.0, *) { shutdownButton.hasDestructiveAction = true }
