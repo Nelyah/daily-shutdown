@@ -29,7 +29,10 @@ enum ConfigFileLoader {
         if let explicit = env["DAILY_SHUTDOWN_CONFIG_PATH"], !explicit.isEmpty {
             let url = URL(fileURLWithPath: explicit, isDirectory: false)
             if let data = try? Data(contentsOf: url), let raw = String(data: data, encoding: .utf8) {
+                log("Config: loaded overrides from explicit path \(explicit)")
                 return parseToml(raw)
+            } else {
+                log("Config: explicit path set but not readable (\(explicit))")
             }
             return ConfigFileOverrides()
         }
@@ -38,7 +41,11 @@ enum ConfigFileLoader {
             return fm.homeDirectoryForCurrentUser.appendingPathComponent(".config", isDirectory: true)
         }()
         let path = xdgBase.appendingPathComponent("daily-shutdown", isDirectory: true).appendingPathComponent("config.toml")
-        guard let data = try? Data(contentsOf: path), let raw = String(data: data, encoding: .utf8) else { return ConfigFileOverrides() }
+        guard let data = try? Data(contentsOf: path), let raw = String(data: data, encoding: .utf8) else {
+            log("Config: no config file found at \(path.path)")
+            return ConfigFileOverrides()
+        }
+        log("Config: loaded overrides from \(path.path)")
         return parseToml(raw)
     }
 
