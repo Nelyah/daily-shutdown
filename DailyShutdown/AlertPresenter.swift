@@ -27,6 +27,26 @@ public final class AlertPresenter: AlertPresenting {
     public weak var delegate: AlertPresenterDelegate?
     public init() {}
 
+    /// Build the informative text displayed in the alert for a given model.
+    /// Extracted to enable deterministic unit tests without invoking AppKit modals.
+    /// - Returns: Multi-line string describing the shutdown plan and postpone status.
+    static func buildInformativeText(model: AlertModel, dateFormatter: DateFormatter) -> String {
+        let timeStr = dateFormatter.string(from: model.scheduled)
+        let originalStr = dateFormatter.string(from: model.original)
+        let remaining = max(0, model.maxPostpones - model.postponesUsed)
+        let postponeLine: String
+        if remaining > 0 {
+            postponeLine = "You may postpone up to \(remaining) more time(s)."
+        } else {
+            postponeLine = "No postpones remaining."
+        }
+        return """
+The system is scheduled to shutdown at \(timeStr).
+Original plan: \(originalStr).
+\(postponeLine)
+"""
+    }
+
     /// Present a blocking (modal) critical alert on the main thread, mapping button presses
     /// back to delegate callbacks. Buttons differ depending on remaining postpones.
     public func present(model: AlertModel) {
@@ -35,18 +55,10 @@ public final class AlertPresenter: AlertPresenting {
             NSApp.activate(ignoringOtherApps: true)
             let df = DateFormatter()
             df.timeStyle = .short
-            let timeStr = df.string(from: model.scheduled)
-            let originalStr = df.string(from: model.original)
-            let remaining = max(0, model.maxPostpones - model.postponesUsed)
-
             let alert = NSAlert()
             alert.alertStyle = .critical
             alert.messageText = "Scheduled System Shutdown"
-            alert.informativeText = """
-The system is scheduled to shutdown at \(timeStr).
-Original plan: \(originalStr).
-You may postpone up to \(remaining) more time(s).
-"""
+            alert.informativeText = Self.buildInformativeText(model: model, dateFormatter: df)
             if model.postponesUsed < model.maxPostpones {
                 alert.addButton(withTitle: "Postpone \(model.postponeIntervalMinutes) min")
                 // Capture shutdown button to mark as destructive.
