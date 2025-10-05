@@ -38,7 +38,7 @@ enum Installer {
     static func install() {
         do {
             let paths = makePaths()
-            let sourceBinary = try resolveCurrentExecutable()
+            let sourceBinary = try resolveReleaseBinary()
             try stageBinary(source: sourceBinary, to: paths.binary)
             try writeLaunchAgentPlist(paths: paths)
             print("Installed LaunchAgent -> \(paths.plist.path)")
@@ -83,14 +83,27 @@ enum Installer {
         print("Uninstall complete.")
     }
 
-    /// Determine the path of the currently running executable (or overridden path in tests).
-    private static func resolveCurrentExecutable() throws -> String {
-        if let override = env["DAILY_SHUTDOWN_EXECUTABLE_OVERRIDE"], !override.isEmpty {
+    /// Resolve (and build if necessary) the path to the RELEASE binary to install.
+    /// Prefers environment override DAILY_SHUTDOWN_RELEASE_BINARY_OVERRIDE (test hook).
+    private static func resolveReleaseBinary() throws -> String {
+        if let override = env["DAILY_SHUTDOWN_RELEASE_BINARY_OVERRIDE"], !override.isEmpty {
             return URL(fileURLWithPath: override).standardizedFileURL.path
         }
-        let path = CommandLine.arguments.first ?? ""
-        guard !path.isEmpty else { throw InstallError.unableToLocateExecutable }
-        return URL(fileURLWithPath: path).standardizedFileURL.path
+        // Assume current working directory is the package root (contains Package.swift)
+        let cwd = FileManager.default.currentDirectoryPath
+        let releasePath = URL(fileURLWithPath: cwd, isDirectory: true)
+            .appendingPathComponent(".build", isDirectory: true)
+            .appendingPathComponent("release", isDirectory: true)
+            .appendingPathComponent(C.binaryName, isDirectory: false)
+        if !fileManager.fileExists(atPath: releasePath.path) {
+            // Build release binary.
+            print("Building release binary (swift build -c release)...")
+            let buildResult = runTask("/usr/bin/env", ["swift", "build", "-c", "release", "--product", C.binaryName])
+            if buildResult.exitCode != 0 || !fileManager.fileExists(atPath: releasePath.path) {
+                throw InstallError.releaseBinaryNotFound(releasePath.path)
+            }
+        }
+        return releasePath.path
     }
 
     /// Copy the running executable to the managed binary path (overwriting existing copy).
@@ -122,9 +135,11 @@ enum Installer {
 
     enum InstallError: Error, CustomStringConvertible {
         case unableToLocateExecutable
+        case releaseBinaryNotFound(String)
         var description: String {
             switch self {
             case .unableToLocateExecutable: return "Unable to determine path to running executable"
+            case .releaseBinaryNotFound(let p): return "Release binary not found after build attempt at: \(p)"
             }
         }
     }

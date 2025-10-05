@@ -21,7 +21,7 @@ final class InstallerTests: XCTestCase {
         let fakeExe = tmp.appendingPathComponent("fakeBinary")
         try Data("echo".utf8).write(to: fakeExe)
         setenv("DAILY_SHUTDOWN_HOME_OVERRIDE", tmp.path, 1)
-        setenv("DAILY_SHUTDOWN_EXECUTABLE_OVERRIDE", fakeExe.path, 1)
+        setenv("DAILY_SHUTDOWN_RELEASE_BINARY_OVERRIDE", fakeExe.path, 1)
         setenv("DAILY_SHUTDOWN_INSTALL_TEST_MODE", "1", 1)
 
         Installer.install()
