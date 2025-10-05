@@ -1,80 +1,111 @@
 import Foundation
 
-/// Simple TOML configuration loader. External file allows user to provide defaults without CLI flags.
-/// Precedence (highest first): CLI flags > user preferences (if implemented) > config file > built-in defaults.
-/// We intentionally implement a minimal subset of TOML needed for expected keys.
-/// Expected TOML keys (all optional):
-///   dailyHour = 18
-///   dailyMinute = 0
-///   defaultPostponeIntervalSeconds = 900
-///   defaultMaxPostpones = 3
-///   defaultWarningOffsets = [900,300,60]
-/// File location: "$HOME/Library/Application Support/DailyShutdown/config.toml" (macOS standard app support path).
-struct FileConfig: Equatable {
+/// Overrides loaded from `config.toml`. Supports both base default fields and runtime option
+/// fields (so users can put most settings in the file). All properties are optional; absent
+/// values leave underlying defaults intact.
+struct ConfigFileOverrides: Equatable {
+    // Base defaults
     var dailyHour: Int?
     var dailyMinute: Int?
     var defaultPostponeIntervalSeconds: Int?
     var defaultMaxPostpones: Int?
     var defaultWarningOffsets: [Int]?
+    // Runtime options
+    var relativeSeconds: Int?
+    var warnOffsets: [Int]?
+    var dryRun: Bool?
+    var noPersist: Bool?
+    var postponeIntervalSeconds: Int?
+    var maxPostpones: Int?
 }
 
 enum ConfigFileLoader {
-    static func load() -> FileConfig {
+    /// Locate and parse the TOML config file returning overrides (all optionals).
+    static func loadOverrides() -> ConfigFileOverrides {
         let fm = FileManager.default
         let env = ProcessInfo.processInfo.environment
-        // Determine primary XDG config directory.
         let xdgBase: URL = {
             if let xdg = env["XDG_CONFIG_HOME"], !xdg.isEmpty { return URL(fileURLWithPath: xdg, isDirectory: true) }
             return fm.homeDirectoryForCurrentUser.appendingPathComponent(".config", isDirectory: true)
         }()
-        let primary = xdgBase.appendingPathComponent("daily-shutdown", isDirectory: true).appendingPathComponent("config.toml")
-        if let data = try? Data(contentsOf: primary), let raw = String(data: data, encoding: .utf8) {
-            return parse(toml: raw)
-        }
-        return FileConfig()
+        let path = xdgBase.appendingPathComponent("daily-shutdown", isDirectory: true).appendingPathComponent("config.toml")
+        guard let data = try? Data(contentsOf: path), let raw = String(data: data, encoding: .utf8) else { return ConfigFileOverrides() }
+        return parseToml(raw)
     }
 
-    // Extremely small TOML-ish parser targeting simple key = value and array syntax for our keys only.
-    private static func parse(toml: String) -> FileConfig {
-        var cfg = FileConfig()
+    /// Minimal TOML subset parser for key=value & integer arrays. Bool parsing supports true/false.
+    static func parseToml(_ toml: String) -> ConfigFileOverrides {
+        var o = ConfigFileOverrides()
         toml.split(separator: "\n").forEach { lineSub in
             let line = lineSub.trimmingCharacters(in: .whitespaces)
             if line.isEmpty || line.hasPrefix("#") { return }
-            guard let eqIdx = line.firstIndex(of: "=") else { return }
-            let key = line[..<eqIdx].trimmingCharacters(in: .whitespaces)
-            let value = line[line.index(after: eqIdx)...].trimmingCharacters(in: .whitespaces)
+            guard let eq = line.firstIndex(of: "=") else { return }
+            let key = line[..<eq].trimmingCharacters(in: .whitespaces)
+            let rawValue = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
+            func parseArray(_ v: String) -> [Int]? {
+                guard v.hasPrefix("[") && v.hasSuffix("]") else { return nil }
+                let inner = v.dropFirst().dropLast()
+                let parts = inner.split{ $0 == "," || $0 == " " }.compactMap { Int($0) }
+                return parts.isEmpty ? nil : parts
+            }
             switch key {
-            case "dailyHour": if let v = Int(value) { cfg.dailyHour = v }
-            case "dailyMinute": if let v = Int(value) { cfg.dailyMinute = v }
-            case "defaultPostponeIntervalSeconds": if let v = Int(value) { cfg.defaultPostponeIntervalSeconds = v }
-            case "defaultMaxPostpones": if let v = Int(value) { cfg.defaultMaxPostpones = v }
-            case "defaultWarningOffsets":
-                if value.hasPrefix("[") && value.hasSuffix("]") {
-                    let inner = value.dropFirst().dropLast()
-                    let parts = inner.split{ $0 == "," || $0 == " " }.compactMap { Int($0) }
-                    if !parts.isEmpty { cfg.defaultWarningOffsets = parts }
-                }
+            // Base defaults
+            case "dailyHour": o.dailyHour = Int(rawValue)
+            case "dailyMinute": o.dailyMinute = Int(rawValue)
+            case "defaultPostponeIntervalSeconds": o.defaultPostponeIntervalSeconds = Int(rawValue)
+            case "defaultMaxPostpones": o.defaultMaxPostpones = Int(rawValue)
+            case "defaultWarningOffsets": o.defaultWarningOffsets = parseArray(rawValue)
+            // Runtime option style overrides
+            case "relativeSeconds": o.relativeSeconds = Int(rawValue)
+            case "warnOffsets": o.warnOffsets = parseArray(rawValue)
+            case "dryRun": o.dryRun = (rawValue.lowercased() == "true")
+            case "noPersist": o.noPersist = (rawValue.lowercased() == "true")
+            case "postponeIntervalSeconds": o.postponeIntervalSeconds = Int(rawValue)
+            case "maxPostpones": o.maxPostpones = Int(rawValue)
             default: break
             }
         }
-        return cfg
+        return o
     }
 }
 
 extension CommandLineConfigParser {
-    /// Compose final AppConfig by layering config file under runtime CLI options.
-    /// CLI flags (already parsed) override file values for overlapping fields.
+    /// Compose final AppConfig by layering (low→high): built-in defaults < file overrides < CLI flags.
     static func parseWithFile(arguments: [String] = CommandLine.arguments) -> AppConfig {
+        // Parse CLI to obtain user-specified runtime flags.
         let cli = parse(arguments: arguments)
-        let fileCfg = ConfigFileLoader.load()
-        // Build base defaults using file overrides if present, else fallback to existing cli defaults.
+        let file = ConfigFileLoader.loadOverrides()
+
+        // Start from built-in defaults.
+        var dailyHour = 18
+        var dailyMinute = 0
+        var defaultPostponeIntervalSeconds = 15 * 60
+        var defaultMaxPostpones = 3
+        var defaultWarningOffsets = [15*60, 5*60, 60]
+
+        // Apply file overrides if present.
+        if let v = file.dailyHour { dailyHour = v }
+        if let v = file.dailyMinute { dailyMinute = v }
+        if let v = file.defaultPostponeIntervalSeconds { defaultPostponeIntervalSeconds = v }
+        if let v = file.defaultMaxPostpones { defaultMaxPostpones = v }
+        if let v = file.defaultWarningOffsets, !v.isEmpty { defaultWarningOffsets = v }
+
+        // Merge runtime options: start with file-level runtime overrides then let CLI take precedence.
+        var mergedOpts = cli.options // CLI already parsed
+        if mergedOpts.relativeSeconds == nil, let v = file.relativeSeconds { mergedOpts.relativeSeconds = v }
+        if mergedOpts.warnOffsets == nil, let v = file.warnOffsets { mergedOpts.warnOffsets = v }
+        if file.dryRun == true { mergedOpts.dryRun = true } // can't negate
+        if file.noPersist == true { mergedOpts.noPersist = true }
+        if mergedOpts.postponeIntervalSeconds == nil, let v = file.postponeIntervalSeconds { mergedOpts.postponeIntervalSeconds = v }
+        if mergedOpts.maxPostpones == nil, let v = file.maxPostpones { mergedOpts.maxPostpones = v }
+
         return AppConfig(
-            dailyHour: fileCfg.dailyHour ?? cli.dailyHour,
-            dailyMinute: fileCfg.dailyMinute ?? cli.dailyMinute,
-            defaultPostponeIntervalSeconds: fileCfg.defaultPostponeIntervalSeconds ?? cli.defaultPostponeIntervalSeconds,
-            defaultMaxPostpones: fileCfg.defaultMaxPostpones ?? cli.defaultMaxPostpones,
-            defaultWarningOffsets: fileCfg.defaultWarningOffsets ?? cli.defaultWarningOffsets,
-            options: cli.options // runtime overrides preserved
+            dailyHour: dailyHour,
+            dailyMinute: dailyMinute,
+            defaultPostponeIntervalSeconds: defaultPostponeIntervalSeconds,
+            defaultMaxPostpones: defaultMaxPostpones,
+            defaultWarningOffsets: defaultWarningOffsets,
+            options: mergedOpts
         )
     }
 }

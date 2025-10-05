@@ -26,7 +26,7 @@ final class ConfigFileLoaderTests: XCTestCase {
         XCTAssertNil(cfg.dailyMinute)
     }
 
-    private func invokeParse(toml: String) -> FileConfig {
+    private func invokeParse(toml: String) -> ConfigFileOverrides {
         // Access private parser via reflection is not possible; duplicate minimal parser logic for test or expose parse.
         // Simpler: write temp file and use load() path with controlled directory.
         let tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -35,7 +35,7 @@ final class ConfigFileLoaderTests: XCTestCase {
         try? toml.data(using: .utf8)?.write(to: url)
         // Monkey-patch loader by temporarily copying file to expected location? Instead, re-implement small parse path here.
         // For brevity we re-run internal parse logic inline (kept identical to production code). In larger system, consider making parse public internal for test.
-        var cfg = FileConfig()
+        var cfg = ConfigFileOverrides()
         toml.split(separator: "\n").forEach { lineSub in
             let line = lineSub.trimmingCharacters(in: .whitespaces)
             if line.isEmpty || line.hasPrefix("#") { return }
