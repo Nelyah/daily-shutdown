@@ -2,8 +2,20 @@ import Foundation
 
 /// Handles installation of a user LaunchAgent so DailyShutdown runs at login.
 /// Side effects are isolated here.
+// Captured launchctl commands in test mode (when DAILY_SHUTDOWN_INSTALL_TEST_MODE=1)
+var installerCapturedCommands: [String] = []
+
 enum Installer {
     private static var fileManager: FileManager { FileManager.default }
+    private static var env: [String:String] { ProcessInfo.processInfo.environment }
+
+    /// Resolve the effective home directory (test override supported via DAILY_SHUTDOWN_HOME_OVERRIDE).
+    private static func homeDir() -> URL {
+        if let override = env["DAILY_SHUTDOWN_HOME_OVERRIDE"], !override.isEmpty {
+            return URL(fileURLWithPath: override, isDirectory: true)
+        }
+        return fileManager.homeDirectoryForCurrentUser
+    }
 
     /// Entry point invoked by `daily-shutdown install`.
     static func run() {
@@ -39,7 +51,7 @@ enum Installer {
     static func uninstall() {
         let fm = fileManager
         let identifier = "dev.daily.shutdown"
-        let agentsDir = fm.homeDirectoryForCurrentUser
+        let agentsDir = homeDir()
             .appendingPathComponent("Library", isDirectory: true)
             .appendingPathComponent("LaunchAgents", isDirectory: true)
         let plistURL = agentsDir.appendingPathComponent("\(identifier).plist")
@@ -51,7 +63,7 @@ enum Installer {
         } else {
             print("LaunchAgent plist not found (nothing to remove)")
         }
-        let binDir = fm.homeDirectoryForCurrentUser
+        let binDir = homeDir()
             .appendingPathComponent("Library", isDirectory: true)
             .appendingPathComponent("Application Support", isDirectory: true)
             .appendingPathComponent("DailyShutdown", isDirectory: true)
@@ -67,6 +79,9 @@ enum Installer {
 
     /// Resolve the currently running executable location.
     private static func currentExecutablePath() throws -> String {
+        if let override = env["DAILY_SHUTDOWN_EXECUTABLE_OVERRIDE"], !override.isEmpty {
+            return URL(fileURLWithPath: override).standardizedFileURL.path
+        }
         let path = CommandLine.arguments.first ?? ""
         guard !path.isEmpty else { throw InstallError.unableToLocateExecutable }
         return URL(fileURLWithPath: path).standardizedFileURL.path
@@ -75,7 +90,7 @@ enum Installer {
     /// Copy the running executable into ~/Library/Application Support/DailyShutdown/bin/DailyShutdown
     /// (overwriting any existing copy) to provide a stable path for the LaunchAgent.
     private static func ensureBinaryInstalled(from sourcePath: String) throws -> String {
-        let supportDir = fileManager.homeDirectoryForCurrentUser
+        let supportDir = homeDir()
             .appendingPathComponent("Library", isDirectory: true)
             .appendingPathComponent("Application Support", isDirectory: true)
             .appendingPathComponent("DailyShutdown", isDirectory: true)
@@ -98,7 +113,7 @@ enum Installer {
     /// Install (write / overwrite) a LaunchAgent plist referencing the given executable.
     /// The agent runs the binary with no extra flags; user can still configure via TOML file.
     private static func installLaunchAgent(executable: String) throws -> String {
-        let agentsDir = fileManager.homeDirectoryForCurrentUser
+        let agentsDir = homeDir()
             .appendingPathComponent("Library", isDirectory: true)
             .appendingPathComponent("LaunchAgents", isDirectory: true)
         try fileManager.createDirectory(at: agentsDir, withIntermediateDirectories: true)
@@ -129,6 +144,13 @@ enum Installer {
     // MARK: - Helpers
     private struct TaskResult { let exitCode: Int32 }
     @discardableResult private static func runTask(_ path: String, _ args: [String]) -> TaskResult {
+        let testMode = env["DAILY_SHUTDOWN_INSTALL_TEST_MODE"] == "1"
+        if testMode {
+            installerCapturedCommands.append(([path] + args).joined(separator: " "))
+            // Simulate success for bootstrap; neutral for bootout
+            let isBootstrap = args.first == "bootstrap"
+            return TaskResult(exitCode: isBootstrap ? 0 : 0)
+        }
         let proc = Process()
         proc.launchPath = path
         proc.arguments = args
