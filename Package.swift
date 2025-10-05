@@ -31,7 +31,8 @@ let package = Package(
                 "SystemActions.swift",
                 "Logging.swift",
                 "ShutdownController.swift",
-                "UserPreferences.swift"
+                "UserPreferences.swift",
+                "Installer.swift"
             ],
             resources: []
         ),

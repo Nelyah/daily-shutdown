@@ -49,6 +49,7 @@ Usage: daily-shutdown [options]
 Sub-commands:
   print-default-config   Print a TOML representation of the built-in default configuration to stdout and exit.
   print-config           Print the currently effective configuration (after merging file + CLI) to stdout and exit.
+  install                Install (or update) a user LaunchAgent to run DailyShutdown at login.
 
 Options:
   -h, --help               Show this help text and exit.

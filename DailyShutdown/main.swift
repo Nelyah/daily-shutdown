@@ -33,6 +33,10 @@ func runDailyShutdownApp() {
         print(CommandLineConfigParser.effectiveConfigTOML(config))
         return
     }
+    if args.first == "install" {
+        Installer.run()
+        return
+    }
     // Immediate flush for print output.
     setbuf(stdout, nil)
     setbuf(stderr, nil)

@@ -95,6 +95,31 @@ maxPostpones = 6
 
 Note: If you supply both `warnOffsets` (runtime override) and `defaultWarningOffsets`, the runtime `warnOffsets` list supersedes `defaultWarningOffsets` for warning scheduling, while `defaultWarningOffsets` remains the baseline set.
 
+## Install as LaunchAgent
+Install a user LaunchAgent so DailyShutdown starts automatically at login:
+```
+swift run DailyShutdown install
+launchctl load -w ~/Library/LaunchAgents/dev.daily.shutdown.plist
+```
+Re-run the install command to update the binary / plist (idempotent overwrite). The binary is copied to:
+```
+~/Library/Application Support/DailyShutdown/bin/DailyShutdown
+```
+To add arguments (e.g., custom warning offsets), edit the generated plist's `ProgramArguments` array and then:
+```
+launchctl unload ~/Library/LaunchAgents/dev.daily.shutdown.plist
+launchctl load -w ~/Library/LaunchAgents/dev.daily.shutdown.plist
+```
+View status:
+```
+launchctl list | grep dev.daily.shutdown || true
+```
+Remove:
+```
+launchctl unload ~/Library/LaunchAgents/dev.daily.shutdown.plist
+rm ~/Library/LaunchAgents/dev.daily.shutdown.plist
+```
+
 ## Test
 ```
 swift test
