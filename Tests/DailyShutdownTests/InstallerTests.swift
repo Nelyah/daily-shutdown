@@ -24,7 +24,7 @@ final class InstallerTests: XCTestCase {
         setenv("DAILY_SHUTDOWN_EXECUTABLE_OVERRIDE", fakeExe.path, 1)
         setenv("DAILY_SHUTDOWN_INSTALL_TEST_MODE", "1", 1)
 
-        Installer.run()
+        Installer.install()
 
         // Check bootstrap command captured
         XCTAssertTrue(installerCapturedCommands.contains { $0.contains("bootstrap gui/") && $0.contains("dev.daily.shutdown.plist") }, "Expected bootstrap command")

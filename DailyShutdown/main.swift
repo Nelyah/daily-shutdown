@@ -34,7 +34,7 @@ func runDailyShutdownApp() {
         return
     }
     if args.first == "install" {
-        Installer.run()
+        Installer.install()
         return
     }
     if args.first == "uninstall" {

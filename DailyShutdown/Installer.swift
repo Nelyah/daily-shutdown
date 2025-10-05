@@ -34,8 +34,8 @@ enum Installer {
 
     private static func makePaths() -> InstallPaths { InstallPaths(home: resolvedHomeDirectory()) }
 
-    /// Entry point invoked by `daily-shutdown install`.
-    static func run() {
+    /// Perform installation workflow (binary staging + LaunchAgent write + bootstrap).
+    static func install() {
         do {
             let paths = makePaths()
             let sourceBinary = try resolveCurrentExecutable()
