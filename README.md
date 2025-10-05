@@ -119,6 +119,10 @@ Remove:
 launchctl unload ~/Library/LaunchAgents/dev.daily.shutdown.plist
 rm ~/Library/LaunchAgents/dev.daily.shutdown.plist
 ```
+Or use the built-in uninstall command (also removes the copied helper binary):
+```
+swift run DailyShutdown uninstall
+```
 
 ## Test
 ```

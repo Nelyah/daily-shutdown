@@ -37,6 +37,10 @@ func runDailyShutdownApp() {
         Installer.run()
         return
     }
+    if args.first == "uninstall" {
+        Installer.uninstall()
+        return
+    }
     // Immediate flush for print output.
     setbuf(stdout, nil)
     setbuf(stderr, nil)

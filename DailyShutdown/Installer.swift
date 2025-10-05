@@ -31,6 +31,34 @@ enum Installer {
         }
     }
 
+    /// Uninstall previously installed LaunchAgent and helper binary.
+    static func uninstall() {
+        let fm = fileManager
+        let identifier = "dev.daily.shutdown"
+        let agentsDir = fm.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("LaunchAgents", isDirectory: true)
+        let plistURL = agentsDir.appendingPathComponent("\(identifier).plist")
+        if fm.fileExists(atPath: plistURL.path) {
+            _ = runTask("/bin/launchctl", ["unload", plistURL.path])
+            do { try fm.removeItem(at: plistURL); print("Removed LaunchAgent plist -> \(plistURL.path)") } catch { print("Failed to remove plist: \(error)") }
+        } else {
+            print("LaunchAgent plist not found (nothing to remove)")
+        }
+        let binDir = fm.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Application Support", isDirectory: true)
+            .appendingPathComponent("DailyShutdown", isDirectory: true)
+            .appendingPathComponent("bin", isDirectory: true)
+        let binPath = binDir.appendingPathComponent("DailyShutdown")
+        if fm.fileExists(atPath: binPath.path) {
+            do { try fm.removeItem(at: binPath); print("Removed installed binary -> \(binPath.path)") } catch { print("Failed to remove binary: \(error)") }
+        } else {
+            print("Installed binary not found (nothing to remove)")
+        }
+        print("Uninstall complete.")
+    }
+
     /// Resolve the currently running executable location.
     private static func currentExecutablePath() throws -> String {
         let path = CommandLine.arguments.first ?? ""
