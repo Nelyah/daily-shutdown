@@ -20,11 +20,25 @@ struct FileConfig: Equatable {
 
 enum ConfigFileLoader {
     static func load() -> FileConfig {
-        let baseDir = FileManager.default.homeDirectoryForCurrentUser
+        let fm = FileManager.default
+        let env = ProcessInfo.processInfo.environment
+        // Determine primary XDG config directory.
+        let xdgBase: URL = {
+            if let xdg = env["XDG_CONFIG_HOME"], !xdg.isEmpty { return URL(fileURLWithPath: xdg, isDirectory: true) }
+            return fm.homeDirectoryForCurrentUser.appendingPathComponent(".config", isDirectory: true)
+        }()
+        let primary = xdgBase.appendingPathComponent("daily-shutdown", isDirectory: true).appendingPathComponent("config.toml")
+        if let data = try? Data(contentsOf: primary), let raw = String(data: data, encoding: .utf8) {
+            return parse(toml: raw)
+        }
+        // Fallback to legacy macOS Application Support path for backwards compatibility.
+        let legacyBase = fm.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/DailyShutdown", isDirectory: true)
-        let url = baseDir.appendingPathComponent("config.toml")
-        guard let data = try? Data(contentsOf: url), let raw = String(data: data, encoding: .utf8) else { return FileConfig() }
-        return parse(toml: raw)
+        let legacy = legacyBase.appendingPathComponent("config.toml")
+        if let data = try? Data(contentsOf: legacy), let raw = String(data: data, encoding: .utf8) {
+            return parse(toml: raw)
+        }
+        return FileConfig()
     }
 
     // Extremely small TOML-ish parser targeting simple key = value and array syntax for our keys only.
