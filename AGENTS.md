@@ -27,6 +27,7 @@
 
 ### 4. Components & Roles
 - `Config.swift`: Parse CLI -> immutable `AppConfig` (warning offsets, postpone interval, limits, flags).
+- `ConfigFile.swift`: Load optional TOML file (`config.toml`) from `$HOME/Library/Application Support/DailyShutdown`. Provides baseline defaults merged beneath CLI overrides (precedence: CLI > user prefs > file > built-in defaults).
 - `UserPreferences.swift`: Persistent user overrides (daily time, warning offsets) + `ConfigProvider` merging with base config.
 - `State.swift`: `ShutdownState` model + persistence (`StateStore` / `FileStateStore`) + `Clock` + `StateFactory` helpers.
 - `Policy.swift`: Pure scheduling & postpone rules (`ShutdownPolicyType`). No IO, no timers.
@@ -86,6 +87,7 @@ README.md
 - Mock protocols, inject `FixedClock` & mock `TimerFactory` (no sleeps).
 - Assert invariants (state progression, timer counts, monotonic schedule, deduped offsets).
 - Add tests for any new CLI flags and policy rules.
+- Config file: ensure TOML parsing handles comments, blank lines, arrays for `defaultWarningOffsets`, and ignores unknown keys.
 
 ### 10. Contribution Checklist
 1. Define minimal protocol (if needed) & implementation.

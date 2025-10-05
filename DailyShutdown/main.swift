@@ -28,7 +28,7 @@ func runDailyShutdownApp() {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
 
-    let config = CommandLineConfigParser.parse()
+    let config = CommandLineConfigParser.parseWithFile()
     if config.options.relativeSeconds != nil || config.options.dryRun {
         NSApp.activate(ignoringOtherApps: true)
     }

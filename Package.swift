@@ -17,6 +17,7 @@ let package = Package(
             sources: [
                 "main.swift",
                 "Config.swift",
+                "ConfigFile.swift",
                 "State.swift",
                 "Policy.swift",
                 "Scheduler.swift",
