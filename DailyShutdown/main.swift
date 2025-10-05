@@ -24,6 +24,15 @@ func runDailyShutdownApp() {
         print(CommandLineConfigParser.defaultConfigTOML())
         return
     }
+    if args.first == "print-config" {
+        // Need to construct config with file + CLI merges (excluding this sub-command token).
+        var filtered = CommandLine.arguments
+        // Remove the sub-command so parser doesn't treat it as flag.
+        if let idx = filtered.firstIndex(of: "print-config") { filtered.remove(at: idx) }
+        let config = CommandLineConfigParser.parseWithFile(arguments: filtered)
+        print(CommandLineConfigParser.effectiveConfigTOML(config))
+        return
+    }
     // Immediate flush for print output.
     setbuf(stdout, nil)
     setbuf(stderr, nil)

@@ -48,6 +48,7 @@ Usage: daily-shutdown [options]
 
 Sub-commands:
   print-default-config   Print a TOML representation of the built-in default configuration to stdout and exit.
+  print-config           Print the currently effective configuration (after merging file + CLI) to stdout and exit.
 
 Options:
   -h, --help               Show this help text and exit.
@@ -84,6 +85,8 @@ Examples:
                 continue
             case "print-default-config":
                 // Sub-command handled in main before parse is called; ignore here if reached.
+                continue
+            case "print-config":
                 continue
             case "--in-seconds":
                 if let v = it.next(), let s = Int(v) { opts.relativeSeconds = s }
@@ -139,6 +142,31 @@ dailyMinute = \(defaults.dailyMinute)
 defaultPostponeIntervalSeconds = \(defaults.defaultPostponeIntervalSeconds)
 defaultMaxPostpones = \(defaults.defaultMaxPostpones)
 defaultWarningOffsets = [\(offsets)]
+"""
+    }
+
+    /// Render an effective (post-merge) configuration to TOML for inspection. Includes
+    /// both default domain values and resolved runtime options.
+    static func effectiveConfigTOML(_ config: AppConfig) -> String {
+        let offsets = config.defaultWarningOffsets.map(String.init).joined(separator: ", ")
+        let warnOffsetsOpt = config.options.warnOffsets?.map(String.init).joined(separator: ", ")
+        return """
+# Effective DailyShutdown configuration (TOML)
+# Generated at: \(Date())
+
+dailyHour = \(config.dailyHour)
+dailyMinute = \(config.dailyMinute)
+defaultPostponeIntervalSeconds = \(config.defaultPostponeIntervalSeconds)
+defaultMaxPostpones = \(config.defaultMaxPostpones)
+defaultWarningOffsets = [\(offsets)]
+
+# Runtime options (nil / absent values omitted)
+relativeSeconds = \(config.options.relativeSeconds.map(String.init) ?? "")
+warnOffsets = [\(warnOffsetsOpt ?? "")] 
+dryRun = \(config.options.dryRun)
+noPersist = \(config.options.noPersist)
+postponeIntervalSeconds = \(config.options.postponeIntervalSeconds.map(String.init) ?? "")
+maxPostpones = \(config.options.maxPostpones.map(String.init) ?? "")
 """
     }
 }
