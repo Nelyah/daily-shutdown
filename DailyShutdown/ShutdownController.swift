@@ -151,6 +151,19 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
                 reschedule()
                 return
             }
+            // Late postpone guard: if current time is already past (or equal to) the scheduled
+            // shutdown time, treat the interaction as a dismissal. This handles races where the
+            // final timer hasn't fired yet (e.g., system sleep / wake) but the user attempts to
+            // postpone after the deadline. We intentionally do NOT mutate state here.
+            if let scheduledDate = StateFactory.parseISO(state.scheduledShutdownISO) {
+                if clock.now() >= scheduledDate {
+                    log("Ignoring postpone: shutdown time already passed (\(scheduledDate))")
+                    warningAlertActive = false
+                    activeAlertCycleOriginalISO = nil
+                    // Do not clear warningPresentedThisCycle so no new alerts appear for this stale cycle.
+                    return
+                }
+            }
             warningAlertActive = false
             // Allow a new warning for the newly postponed schedule.
             warningPresentedThisCycle = false
