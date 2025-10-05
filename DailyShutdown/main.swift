@@ -15,9 +15,13 @@ import Darwin
 /// and enters the main run loop. Designed to keep side effects localized.
 func runDailyShutdownApp() {
 
-    // Early help handling (before heavy initialization).
-    if CommandLine.arguments.contains("--help") || CommandLine.arguments.contains("-h") {
+    let args = CommandLine.arguments.dropFirst()
+    if args.contains("--help") || args.contains("-h") {
         print(CommandLineConfigParser.helpText)
+        return
+    }
+    if args.first == "print-default-config" {
+        print(CommandLineConfigParser.defaultConfigTOML())
         return
     }
     // Immediate flush for print output.
