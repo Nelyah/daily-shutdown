@@ -39,6 +39,14 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
     /// Invariant: Mutated only on `stateQueue` inside `reschedule()`.
     private var lastScheduledShutdownDate: Date? = nil
 
+    /// True when a shutdown cycle has completed (final timer fired / performShutdown executed)
+    /// but an existing warning alert window from the prior cycle remains visible. While this
+    /// flag is set, user interactions with the stale alert should NOT trigger postponement or
+    /// mutate the freshly created next-cycle state. Instead we treat any action (postpone / ignore)
+    /// as a simple dismissal that enables scheduling for the new cycle. (Immediate shutdown
+    /// action is still honored if not a dry-run, though in practice the process will exit.)
+    private var cycleCompletedAwaitingAlertDismissal: Bool = false
+
     /// Create a controller with injected agents; defaults are provided for production runtime.
     /// State is initialized immediately (and persisted unless `--no-persist`). Delegates are then wired.
     public init(config: AppConfig,
@@ -131,6 +139,18 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
     /// User requested a postpone: validate with policy then mutate state & reschedule.
     public func userChosePostpone() {
         stateQueue.async { [self] in
+            // If the prior cycle already completed while the alert was visible, ignore the
+            // postpone request (treat as dismissal) and schedule the new cycle instead of
+            // mutating state or resetting postpone counters.
+            if cycleCompletedAwaitingAlertDismissal {
+                warningAlertActive = false
+                cycleCompletedAwaitingAlertDismissal = false
+                activeAlertCycleOriginalISO = nil
+                // Allow warnings for the new cycle.
+                warningPresentedThisCycle = false
+                reschedule()
+                return
+            }
             warningAlertActive = false
             // Allow a new warning for the newly postponed schedule.
             warningPresentedThisCycle = false
@@ -149,6 +169,14 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
     public func userIgnored() {
         stateQueue.async { [self] in
             warningAlertActive = false
+            if cycleCompletedAwaitingAlertDismissal {
+                // Final timer already advanced the cycle; simply enable scheduling for new cycle.
+                cycleCompletedAwaitingAlertDismissal = false
+                warningPresentedThisCycle = false
+                activeAlertCycleOriginalISO = nil
+                reschedule()
+                return
+            }
             // Intentionally keep warningPresentedThisCycle = true to suppress further alerts.
             // If the cycle rolled over while the alert was open, re-enable warning for the new cycle.
             if let presentedCycle = activeAlertCycleOriginalISO, presentedCycle != state.originalScheduledShutdownISO {
@@ -193,7 +221,11 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
                 // Roll over to next day for demonstration
                 state = StateFactory.newState(now: clock.now(), config: config)
                 // Defer scheduling warnings until any existing alert is dismissed (if active).
-                if !warningAlertActive { reschedule() }
+                if warningAlertActive {
+                    cycleCompletedAwaitingAlertDismissal = true
+                } else {
+                    reschedule()
+                }
                 if !config.options.noPersist { stateStore.save(state) }
                 return
             }
@@ -201,7 +233,11 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
             // Schedule next cycle optimistically
             state = StateFactory.newState(now: clock.now(), config: config)
             if !config.options.noPersist { stateStore.save(state) }
-            if !warningAlertActive { reschedule() }
+            if warningAlertActive {
+                cycleCompletedAwaitingAlertDismissal = true
+            } else {
+                reschedule()
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { exit(0) }
         }
     }
