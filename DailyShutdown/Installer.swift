@@ -13,13 +13,17 @@ enum Installer {
             let plistPath = try installLaunchAgent(executable: appSupportBin)
             print("Installed LaunchAgent -> \(plistPath)")
             print("Executable location -> \(appSupportBin)")
-            // Attempt to load (or reload) immediately.
-            _ = runTask("/bin/launchctl", ["unload", plistPath]) // ignore errors (may not be loaded yet)
-            let loadResult = runTask("/bin/launchctl", ["load", "-w", plistPath])
-            if loadResult.exitCode == 0 {
-                print("LaunchAgent loaded (exit=0)")
+            // Modern launchd workflow: bootout (ignore errors) then bootstrap.
+            let uid = getuid()
+            let domain = "gui/\(uid)"
+            let label = "dev.daily.shutdown"
+            // bootout expects domain/label path
+            _ = runTask("/bin/launchctl", ["bootout", "\(domain)/\(label)"]) // ignore failures if not loaded
+            let bootstrapResult = runTask("/bin/launchctl", ["bootstrap", domain, plistPath])
+            if bootstrapResult.exitCode == 0 {
+                print("LaunchAgent bootstrapped into domain \(domain) (exit=0)")
             } else {
-                print("LaunchAgent load returned exit=\(loadResult.exitCode). You may need to run: launchctl load -w \(plistPath)")
+                print("LaunchAgent bootstrap returned exit=\(bootstrapResult.exitCode). Try manually: launchctl bootout \(domain)/\(label); launchctl bootstrap \(domain) \(plistPath)")
             }
             // Print effective config so user immediately sees active settings.
             let effective = CommandLineConfigParser.parseWithFile()
@@ -40,7 +44,9 @@ enum Installer {
             .appendingPathComponent("LaunchAgents", isDirectory: true)
         let plistURL = agentsDir.appendingPathComponent("\(identifier).plist")
         if fm.fileExists(atPath: plistURL.path) {
-            _ = runTask("/bin/launchctl", ["unload", plistURL.path])
+            let uid = getuid()
+            let domain = "gui/\(uid)"
+            _ = runTask("/bin/launchctl", ["bootout", "\(domain)/\(identifier)"]) // ignore failure
             do { try fm.removeItem(at: plistURL); print("Removed LaunchAgent plist -> \(plistURL.path)") } catch { print("Failed to remove plist: \(error)") }
         } else {
             print("LaunchAgent plist not found (nothing to remove)")

@@ -99,7 +99,7 @@ Note: If you supply both `warnOffsets` (runtime override) and `defaultWarningOff
 Install a user LaunchAgent so DailyShutdown starts automatically at login:
 ```
 swift run DailyShutdown install
-launchctl load -w ~/Library/LaunchAgents/dev.daily.shutdown.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.daily.shutdown.plist   # (only needed if auto bootstrap failed)
 ```
 Re-run the install command to update the binary / plist (idempotent overwrite). The binary is copied to:
 ```
@@ -107,16 +107,16 @@ Re-run the install command to update the binary / plist (idempotent overwrite). 
 ```
 To add arguments (e.g., custom warning offsets), edit the generated plist's `ProgramArguments` array and then:
 ```
-launchctl unload ~/Library/LaunchAgents/dev.daily.shutdown.plist
-launchctl load -w ~/Library/LaunchAgents/dev.daily.shutdown.plist
+launchctl bootout gui/$(id -u)/dev.daily.shutdown
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.daily.shutdown.plist
 ```
 View status:
 ```
-launchctl list | grep dev.daily.shutdown || true
+launchctl print gui/$(id -u)/dev.daily.shutdown | grep state || true
 ```
 Remove:
 ```
-launchctl unload ~/Library/LaunchAgents/dev.daily.shutdown.plist
+launchctl bootout gui/$(id -u)/dev.daily.shutdown
 rm ~/Library/LaunchAgents/dev.daily.shutdown.plist
 ```
 Or use the built-in uninstall command (also removes the copied helper binary):
