@@ -17,6 +17,12 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
 
     private let workDir: URL
 
+    /// True while a warning alert window is currently presented to the user.
+    /// Invariant: set to true immediately before invoking `alertPresenter.present(model:)` and
+    /// reset to false upon any delegate callback (postpone / shutdown / ignore) or when a
+    /// shutdown cycle rolls over. Prevents multiple overlapping warning windows.
+    private var warningAlertActive: Bool = false
+
     /// Create a controller with injected agents; defaults are provided for production runtime.
     /// State is initialized immediately (and persisted unless `--no-persist`). Delegates are then wired.
     public init(config: AppConfig,
@@ -80,6 +86,8 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
     /// Warning timer fired: present alert with current model details.
     public func warningDue() {
         stateQueue.async { [self] in
+            // Coalesce multiple warnings if an alert is already active.
+            if warningAlertActive { return }
             guard let shutdownDate = StateFactory.parseISO(state.scheduledShutdownISO),
                   let originalDate = StateFactory.parseISO(state.originalScheduledShutdownISO) else { return }
             let model = AlertModel(
@@ -89,6 +97,7 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
                 maxPostpones: config.effectiveMaxPostpones,
                 postponeIntervalMinutes: Int(round(Double(config.effectivePostponeIntervalSeconds)/60.0))
             )
+            warningAlertActive = true
             alertPresenter.present(model: model)
         }
     }
@@ -102,6 +111,7 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
     /// User requested a postpone: validate with policy then mutate state & reschedule.
     public func userChosePostpone() {
         stateQueue.async { [self] in
+            warningAlertActive = false
             guard policy.canPostpone(state: state, config: config) else { return }
             policy.applyPostpone(state: &state, config: config, now: clock.now())
             if !config.options.noPersist { stateStore.save(state) }
@@ -112,12 +122,18 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
 
     /// User chose immediate shutdown.
     public func userChoseShutdownNow() { performShutdown() }
-    /// User dismissed/ignored the alert; no action needed.
-    public func userIgnored() { /* no-op */ }
+    /// User dismissed/ignored the alert; simply clear the active flag so future warnings can display.
+    public func userIgnored() {
+        stateQueue.async { [self] in
+            warningAlertActive = false
+        }
+    }
 
     /// Perform (or simulate) system shutdown, roll state into next cycle, and schedule again.
     private func performShutdown() {
         stateQueue.async { [self] in
+            // Reset any active alert state before rolling over.
+            warningAlertActive = false
             log("Initiating shutdown dryRun=\(config.options.dryRun)")
             if config.options.dryRun {
                 // Roll over to next day for demonstration
