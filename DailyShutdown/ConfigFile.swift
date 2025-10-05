@@ -25,6 +25,14 @@ enum ConfigFileLoader {
     static func loadOverrides() -> ConfigFileOverrides {
         let fm = FileManager.default
         let env = ProcessInfo.processInfo.environment
+        // Test / power-user override: if DAILY_SHUTDOWN_CONFIG_PATH is set, use it directly.
+        if let explicit = env["DAILY_SHUTDOWN_CONFIG_PATH"], !explicit.isEmpty {
+            let url = URL(fileURLWithPath: explicit, isDirectory: false)
+            if let data = try? Data(contentsOf: url), let raw = String(data: data, encoding: .utf8) {
+                return parseToml(raw)
+            }
+            return ConfigFileOverrides()
+        }
         let xdgBase: URL = {
             if let xdg = env["XDG_CONFIG_HOME"], !xdg.isEmpty { return URL(fileURLWithPath: xdg, isDirectory: true) }
             return fm.homeDirectoryForCurrentUser.appendingPathComponent(".config", isDirectory: true)
