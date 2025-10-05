@@ -1,14 +1,14 @@
 import Foundation
 
 /// Delegate notified when timers for warning or final shutdown fire.
-public protocol SchedulerDelegate: AnyObject {
+protocol SchedulerDelegate: AnyObject {
     func warningDue()
     func shutdownDue()
 }
 
 /// Schedules dispatch timers for warning & shutdown events. Owns its private queue.
-public final class Scheduler {
-    public weak var delegate: SchedulerDelegate?
+final class Scheduler {
+    weak var delegate: SchedulerDelegate?
     // Maintain references so timers aren't deallocated.
     private var warningTimers: [CancellableTimer] = []
     private var finalTimer: CancellableTimer?
@@ -16,9 +16,9 @@ public final class Scheduler {
     private let timerFactory: TimerFactory
     private let clock: Clock
 
-    public init(queue: DispatchQueue = DispatchQueue(label: "scheduler.queue", qos: .userInitiated),
-                timerFactory: TimerFactory = GCDTimerFactory(),
-                clock: Clock = SystemClock()) {
+    init(queue: DispatchQueue = DispatchQueue(label: "scheduler.queue", qos: .userInitiated),
+         timerFactory: TimerFactory = GCDTimerFactory(),
+         clock: Clock = SystemClock()) {
         self.queue = queue
         self.timerFactory = timerFactory
         self.clock = clock
@@ -26,7 +26,7 @@ public final class Scheduler {
 
     /// Schedule (replacing any existing timers) a shutdown at `shutdownDate` and optional warning.
     /// Intervals are clamped to zero (fire immediately) if already elapsed.
-    public func schedule(shutdownDate: Date, warningDate: Date?, warningOffsets: [Int] = []) {
+    func schedule(shutdownDate: Date, warningDate: Date?, warningOffsets: [Int] = []) {
         cancel()
 
         // Capture a single reference time so both intervals are derived consistently.
@@ -71,7 +71,7 @@ public final class Scheduler {
     }
 
     /// Cancel any in-flight timers (idempotent).
-    public func cancel() {
+    func cancel() {
         warningTimers.forEach { $0.cancel() }
         warningTimers.removeAll()
         finalTimer?.cancel(); finalTimer = nil
@@ -80,22 +80,22 @@ public final class Scheduler {
 
 // MARK: - Timer Abstractions
 /// Token that allows cancellation of a scheduled timer.
-public protocol CancellableTimer { func cancel() }
+protocol CancellableTimer { func cancel() }
 
 /// Factory abstraction to create timers; aids deterministic testing.
-public protocol TimerFactory {
+protocol TimerFactory {
     func scheduleSingle(after interval: TimeInterval, queue: DispatchQueue, handler: @escaping () -> Void) -> CancellableTimer
 }
 
 /// Production implementation backed by DispatchSourceTimer.
-public final class GCDTimerFactory: TimerFactory {
-    public init() {}
+final class GCDTimerFactory: TimerFactory {
+    init() {}
     private final class Token: CancellableTimer {
         private let timer: DispatchSourceTimer
         init(timer: DispatchSourceTimer) { self.timer = timer }
         func cancel() { timer.cancel() }
     }
-    public func scheduleSingle(after interval: TimeInterval, queue: DispatchQueue, handler: @escaping () -> Void) -> CancellableTimer {
+    func scheduleSingle(after interval: TimeInterval, queue: DispatchQueue, handler: @escaping () -> Void) -> CancellableTimer {
         let t = DispatchSource.makeTimerSource(queue: queue)
         t.schedule(deadline: .now() + interval)
         t.setEventHandler(handler: handler)

@@ -2,33 +2,33 @@ import AppKit
 import Foundation
 
 /// Delegate receiving user decisions from an alert presentation.
-public protocol AlertPresenterDelegate: AnyObject {
+protocol AlertPresenterDelegate: AnyObject {
     func userChosePostpone()
     func userChoseShutdownNow()
     func userIgnored()
 }
 
 /// Immutable data passed to the UI describing the current shutdown scenario.
-public struct AlertModel {
-    public let scheduled: Date
-    public let original: Date
-    public let postponesUsed: Int
-    public let maxPostpones: Int
+struct AlertModel {
+    let scheduled: Date
+    let original: Date
+    let postponesUsed: Int
+    let maxPostpones: Int
     /// Raw postpone interval in seconds (from effective configuration at alert time).
-    public let postponeIntervalSeconds: Int
+    let postponeIntervalSeconds: Int
     /// Convenience minute rounding for textual display when >= 2 minutes.
-    public var postponeIntervalMinutes: Int { Int(round(Double(postponeIntervalSeconds)/60.0)) }
+    var postponeIntervalMinutes: Int { Int(round(Double(postponeIntervalSeconds)/60.0)) }
 }
 
 /// Interface for presenting a shutdown warning to the user.
-public protocol AlertPresenting: AnyObject {
+protocol AlertPresenting: AnyObject {
     var delegate: AlertPresenterDelegate? { get set }
     func present(model: AlertModel)
 }
 
-public final class AlertPresenter: AlertPresenting {
-    public weak var delegate: AlertPresenterDelegate?
-    public init() {}
+final class AlertPresenter: AlertPresenting {
+    weak var delegate: AlertPresenterDelegate?
+    init() {}
 
     /// Build the informative text displayed in the alert for a given model.
     /// Extracted to enable deterministic unit tests without invoking AppKit modals.
@@ -61,7 +61,7 @@ Original plan: \(originalStr).
 
     /// Present a blocking (modal) critical alert on the main thread, mapping button presses
     /// back to delegate callbacks. Buttons differ depending on remaining postpones.
-    public func present(model: AlertModel) {
+    func present(model: AlertModel) {
         DispatchQueue.main.async {
             NSApp.setActivationPolicy(.accessory)
             NSApp.activate(ignoringOtherApps: true)

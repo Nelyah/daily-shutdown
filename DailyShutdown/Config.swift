@@ -2,47 +2,47 @@ import Foundation
 
 /// User-supplied runtime flags parsed from the command line. All values are optional;
 /// unset values fall back to defaults contained in `AppConfig`.
-public struct RuntimeOptions: Equatable {
-    public var relativeSeconds: Int? = nil      // --in-seconds N
-    public var warnOffsets: [Int]? = nil        // --warn-offsets "900,300,60" (seconds before shutdown)
-    public var dryRun = false                   // --dry-run
-    public var noPersist = false                // --no-persist
-    public var postponeIntervalSeconds: Int? = nil // --postpone-sec S
-    public var maxPostpones: Int? = nil         // --max-postpones K
+struct RuntimeOptions: Equatable {
+    var relativeSeconds: Int? = nil      // --in-seconds N
+    var warnOffsets: [Int]? = nil        // --warn-offsets "900,300,60" (seconds before shutdown)
+    var dryRun = false                   // --dry-run
+    var noPersist = false                // --no-persist
+    var postponeIntervalSeconds: Int? = nil // --postpone-sec S
+    var maxPostpones: Int? = nil         // --max-postpones K
 }
 
 /// Immutable application configuration composed of defaults and `RuntimeOptions` overrides.
 /// This is injected into all agents needing policy / scheduling parameters.
-public struct AppConfig: Equatable {
-    public let dailyHour: Int
-    public let dailyMinute: Int
-    public let defaultPostponeIntervalSeconds: Int
-    public let defaultMaxPostpones: Int
+struct AppConfig: Equatable {
+    let dailyHour: Int
+    let dailyMinute: Int
+    let defaultPostponeIntervalSeconds: Int
+    let defaultMaxPostpones: Int
     /// Default warning offsets (seconds before shutdown). Ordered high->low. Example: [900, 300, 60].
-    public let defaultWarningOffsets: [Int]
-    public let options: RuntimeOptions
+    let defaultWarningOffsets: [Int]
+    let options: RuntimeOptions
 
     /// Effective postpone interval (seconds), using runtime override if present.
-    public var effectivePostponeIntervalSeconds: Int {
+    var effectivePostponeIntervalSeconds: Int {
         options.postponeIntervalSeconds ?? defaultPostponeIntervalSeconds
     }
     /// Effective maximum number of postpones allowed in a shutdown cycle.
-    public var effectiveMaxPostpones: Int {
+    var effectiveMaxPostpones: Int {
         options.maxPostpones ?? defaultMaxPostpones
     }
     /// Effective warning offsets list (seconds before shutdown). If user supplied overrides, they replace defaults.
     /// Returned sorted descending (largest offset first) and deduplicated.
-    public var effectiveWarningOffsets: [Int] {
+    var effectiveWarningOffsets: [Int] {
         let source = options.warnOffsets ?? defaultWarningOffsets
         return Array(Set(source.filter { $0 > 0 })).sorted(by: >)
     }
     /// Primary warning lead (largest offset) used by policy for earliest alert; nil if no offsets.
-    public var primaryWarningLeadSeconds: Int? { effectiveWarningOffsets.first }
+    var primaryWarningLeadSeconds: Int? { effectiveWarningOffsets.first }
 }
 
-public enum CommandLineConfigParser {
+enum CommandLineConfigParser {
     /// Command line usage / help text enumerating all supported flags.
-    public static var helpText: String {
+    static var helpText: String {
         return """
 Usage: daily-shutdown [options]
 
@@ -69,7 +69,7 @@ Examples:
     }
     /// Parse command line `arguments` (defaults to `CommandLine.arguments`) into an `AppConfig`.
     /// Unspecified flags retain their default values. Unknown flags are ignored.
-    public static func parse(arguments: [String] = CommandLine.arguments) -> AppConfig {
+    static func parse(arguments: [String] = CommandLine.arguments) -> AppConfig {
         var opts = RuntimeOptions()
         var it = arguments.makeIterator()
         _ = it.next() // skip exe

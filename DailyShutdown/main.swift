@@ -13,7 +13,7 @@ import Darwin
 
 /// Bootstraps application dependencies, parses runtime options, instantiates the controller
 /// and enters the main run loop. Designed to keep side effects localized.
-public func runDailyShutdownApp() {
+func runDailyShutdownApp() {
 
     // Early help handling (before heavy initialization).
     if CommandLine.arguments.contains("--help") || CommandLine.arguments.contains("-h") {

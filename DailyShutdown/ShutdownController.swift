@@ -8,7 +8,7 @@ import AppKit
 /// Orchestrates the full shutdown cycle: loading/creating state, computing policy plans,
 /// scheduling timers, presenting alerts, handling user actions, and initiating system shutdown.
 /// Thread-safety: state mutations are serialized via `stateQueue`.
-public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate {
+final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate {
     private let config: AppConfig
     /// Once a warning has been presented in the current cycle, additional scheduled warnings
     /// (from smaller offsets) are suppressed to avoid multiple sequential popups. This flag
@@ -49,13 +49,13 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
 
     /// Create a controller with injected agents; defaults are provided for production runtime.
     /// State is initialized immediately (and persisted unless `--no-persist`). Delegates are then wired.
-    public init(config: AppConfig,
-                stateStore: StateStore? = nil,
-                clock: Clock = SystemClock(),
-                policy: ShutdownPolicyType = ShutdownPolicy(),
-                scheduler: Scheduler = Scheduler(),
-                actions: SystemActions = AppleScriptSystemActions(),
-                alertPresenter: AlertPresenting? = nil) {
+    init(config: AppConfig,
+         stateStore: StateStore? = nil,
+         clock: Clock = SystemClock(),
+         policy: ShutdownPolicyType = ShutdownPolicy(),
+         scheduler: Scheduler = Scheduler(),
+         actions: SystemActions = AppleScriptSystemActions(),
+         alertPresenter: AlertPresenting? = nil) {
         self.config = config
         let baseDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/DailyShutdown", isDirectory: true)
@@ -80,7 +80,7 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
     }
 
     /// Begin scheduling according to current state and log startup information.
-    public func start() {
+    func start() {
         reschedule()
         logStartup()
     }
@@ -110,7 +110,7 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
 
     // MARK: SchedulerDelegate
     /// Warning timer fired: present alert with current model details.
-    public func warningDue() {
+    func warningDue() {
         stateQueue.async { [self] in
             // Suppress if an alert is active or we already showed a warning this cycle.
             if warningAlertActive || warningPresentedThisCycle { return }
@@ -131,13 +131,13 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
     }
 
     /// Final shutdown timer fired: initiate shutdown sequence.
-    public func shutdownDue() {
+    func shutdownDue() {
         performShutdown()
     }
 
     // MARK: AlertPresenterDelegate
     /// User requested a postpone: validate with policy then mutate state & reschedule.
-    public func userChosePostpone() {
+    func userChosePostpone() {
         stateQueue.async { [self] in
             // If the prior cycle already completed while the alert was visible, ignore the
             // postpone request (treat as dismissal) and schedule the new cycle instead of
@@ -177,9 +177,9 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
     }
 
     /// User chose immediate shutdown.
-    public func userChoseShutdownNow() { performShutdown() }
+    func userChoseShutdownNow() { performShutdown() }
     /// User dismissed/ignored the alert; simply clear the active flag so future warnings can display.
-    public func userIgnored() {
+    func userIgnored() {
         stateQueue.async { [self] in
             warningAlertActive = false
             if cycleCompletedAwaitingAlertDismissal {
@@ -265,7 +265,7 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
 
 #if DEBUG
     /// Test-only helper: asynchronously provide the current in-memory state snapshot.
-    public func _testCurrentState(completion: @escaping (ShutdownState) -> Void) {
+    func _testCurrentState(completion: @escaping (ShutdownState) -> Void) {
         stateQueue.async { completion(self.state) }
     }
 #endif

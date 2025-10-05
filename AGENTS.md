@@ -7,6 +7,7 @@
 - Determinism & Testability: time, timers, system calls, UI abstracted.
 - Config Driven: warning timings come solely from `--warn-offsets` (no hard-coded magic numbers in logic).
 - Documentation: every public type/function has a doc comment explaining role + invariants.
+- Minimal Public Surface: default all symbols to internal. Elevate to public ONLY for cross-module consumption. Tests rely on `@testable import`, so internal is sufficient. Public exposure requires justification (record in PR/commit message) to preserve flexibility and avoid accidental API lock-in.
 - Quality Gate: every change has unit tests; commits use Conventional Commit spec.
 
 ### 2. Required Practices
@@ -93,6 +94,7 @@ README.md
 4. Maintain dependency direction (no cycles).
 5. Commit with Conventional Commit message.
 6. Update this file ONLY if protocol surface / architecture changes.
+7. Review visibility: remove or avoid `public` unless a symbol is intentionally part of the external API. Provide rationale for any new public symbol.
 
 ### 11. Non-Goals
 - Cross-machine sync, multi-user, complex UI flows.
