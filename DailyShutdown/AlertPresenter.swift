@@ -8,6 +8,8 @@ protocol AlertPresenterDelegate: AnyObject {
     func userIgnored()
 }
 
+// (moved relativeTime helper inside AlertPresenter for proper scoping)
+
 /// Immutable data passed to the UI describing the current shutdown scenario.
 struct AlertModel {
     let scheduled: Date
@@ -22,32 +24,58 @@ struct AlertModel {
 
 /// Interface for presenting a shutdown warning to the user.
 protocol AlertPresenting: AnyObject {
+    /// Delegate for user decisions sourced from presented UI.
     var delegate: AlertPresenterDelegate? { get set }
+    /// Present the alert for a given model. Implementations must marshal to main thread if needed.
     func present(model: AlertModel)
 }
 
+/// Concrete AppKit alert presenter providing a concise multi-line summary and action guidance.
 final class AlertPresenter: AlertPresenting {
     weak var delegate: AlertPresenterDelegate?
     init() {}
+
+    /// Produce a compact human readable relative time description (approximate) used in the alert.
+    /// Examples: "45s", "3m", "1h 12m". Values clamp at zero for past dates.
+    private static func relativeTime(until date: Date, now: Date = Date()) -> String {
+        let seconds = Int(max(0, date.timeIntervalSince(now)))
+        if seconds < 60 { return "\(seconds)s" }
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes)m" }
+        let hours = minutes / 60
+        let remMinutes = minutes % 60
+        if remMinutes == 0 { return "\(hours)h" }
+        return "\(hours)h \(remMinutes)m"
+    }
 
     /// Build the informative text displayed in the alert for a given model.
     /// Extracted to enable deterministic unit tests without invoking AppKit modals.
     /// - Returns: Multi-line string describing the shutdown plan and postpone status.
     static func buildInformativeText(model: AlertModel, dateFormatter: DateFormatter) -> String {
         let timeStr = dateFormatter.string(from: model.scheduled)
-        let originalStr = dateFormatter.string(from: model.original)
-        let remaining = max(0, model.maxPostpones - model.postponesUsed)
-        let postponeLine: String
-        if remaining > 0 {
-            postponeLine = "You may postpone up to \(remaining) more time(s)."
-        } else {
-            postponeLine = "No postpones remaining."
+        let remainingRelative = Self.relativeTime(until: model.scheduled)
+        var lines: [String] = []
+        lines.append("Scheduled: \(timeStr) (in \(remainingRelative))")
+        if model.original != model.scheduled { // suppress duplicate original line when unchanged
+            let originalStr = dateFormatter.string(from: model.original)
+            lines.append("Original:  \(originalStr)")
         }
-        return """
-The system is scheduled to shutdown at \(timeStr).
-Original plan: \(originalStr).
-\(postponeLine)
-"""
+        let remainingPostpones = max(0, model.maxPostpones - model.postponesUsed)
+        if remainingPostpones > 0 {
+            let intervalMinutes: String
+            if model.postponeIntervalSeconds < 120 {
+                intervalMinutes = "every \(model.postponeIntervalSeconds)s"
+            } else {
+                intervalMinutes = "+\(Int(round(Double(model.postponeIntervalSeconds)/60.0)))m each"
+            }
+            lines.append("Postpones: \(remainingPostpones) remaining (\(intervalMinutes))")
+        } else {
+            lines.append("Postpones: none remaining")
+        }
+        // Short guidance line separated by a blank line for readability.
+        lines.append("")
+        lines.append("Choose Postpone to delay, Shutdown Now to proceed, or Ignore to hide this warning.")
+        return lines.joined(separator: "\n")
     }
 
     /// Compute the postpone button title given the interval.

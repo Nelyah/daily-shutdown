@@ -13,8 +13,12 @@ final class AlertPresenterTextTests: XCTestCase {
             postponeIntervalSeconds: 600
         )
         let text = AlertPresenter.buildInformativeText(model: model, dateFormatter: df)
-        XCTAssertTrue(text.contains("You may postpone up to 2 more time(s)."), "Expected remaining postpones phrasing")
-        XCTAssertFalse(text.contains("No postpones remaining."))
+        // Should list scheduled time line with label.
+        XCTAssertTrue(text.contains("Scheduled:"))
+        // Original suppressed because identical.
+        XCTAssertFalse(text.contains("Original:"))
+        // Postpones line reports remaining count.
+        XCTAssertTrue(text.contains("Postpones: 2 remaining"))
     }
 
 final class AlertPresenterButtonTitleTests: XCTestCase {
@@ -39,7 +43,7 @@ final class AlertPresenterButtonTitleTests: XCTestCase {
             postponeIntervalSeconds: 600
         )
         let text = AlertPresenter.buildInformativeText(model: model, dateFormatter: df)
-        XCTAssertTrue(text.contains("No postpones remaining."))
-        XCTAssertFalse(text.contains("You may postpone up to"))
+        XCTAssertTrue(text.contains("Postpones: none remaining"))
+        XCTAssertFalse(text.contains("remaining ("))
     }
 }
