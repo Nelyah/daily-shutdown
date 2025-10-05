@@ -63,9 +63,11 @@ public final class Scheduler {
 
         // Log with explicit ISO8601 timestamp of final shutdown and optional warning.
         let iso = ISO8601DateFormatter()
-        let finalISO = iso.string(from: shutdownDate)
+        iso.formatOptions = [.withInternetDateTime]
+        iso.timeZone = .current // ensure local timezone in log output
+        let finalLocal = iso.string(from: shutdownDate)
         let warningList = plannedWarningDates.map { iso.string(from: $0) }.joined(separator: ", ")
-        log("Scheduler: finalDate=\(finalISO) in=\(String(format: "%.2f", finalInterval))s warnings=[\(warningList)]")
+        log("Scheduler: finalLocal=\(finalLocal) in=\(String(format: "%.2f", finalInterval))s warningsLocal=[\(warningList)]")
     }
 
     /// Cancel any in-flight timers (idempotent).

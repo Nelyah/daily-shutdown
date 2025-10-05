@@ -88,8 +88,8 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
     /// Emit initial schedule log for observability.
     private func logStartup() {
         if let date = StateFactory.parseISO(state.scheduledShutdownISO) {
-            let df = DateFormatter(); df.timeStyle = .short
-            log("Scheduled shutdown at \(df.string(from: date))")
+            let df = DateFormatter(); df.timeStyle = .short; df.timeZone = .current
+            log("Scheduled shutdown (local) at \(df.string(from: date))")
         }
     }
 
