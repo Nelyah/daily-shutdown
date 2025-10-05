@@ -1,0 +1,109 @@
+Architectural Review: DailyShutdown
+Role Perspective: Staff Engineer / Lead Architect
+Date: 2025-10-05
+
+1. Executive Summary
+The architecture document provides a clear, protocol-driven, side-effect-isolated design emphasizing SOLID, determinism, and testability. The conceptual decomposition into narrowly scoped agents is strong and mostly consistent with the stated principles. The system is small yet intentionally designed for future extensibility. Overall maturity is high for a utility of this size. Primary improvement areas are: (a) clarifying some invariants versus actual code behavior, (b) formalizing contract stability and versioning of protocols, (c) elevating observability and failure semantics, and (d) tightening concurrency guarantees and life-cycle transitions (especially alert + cycle rollover interplay, recently patched). The document is strong enough to onboard a new contributor quickly, but could benefit from a concise “golden path” narrative and a decision log.
+
+2. Strengths
+- Clear separation of pure logic (policy) from side effects (controller, scheduler, system actions, UI, persistence).
+- Dependency Inversion rigorously applied; orchestration depends on protocols only.
+- Enumerated extension points reduce guesswork for contributors.
+- Explicit invariants section: accelerates defect triage and test authoring.
+- Config-driven behavior (warning offsets) avoids magic numbers in logic.
+- Concurrency model explicitly documented (queues per concern) preventing accidental races.
+- Testing strategy promotes deterministic unit tests (clocks, timer factories, mocks).
+- Document is scoped, avoids narrative sprawl; high signal density.
+
+3. Maintainability & Readability
+- File-per-agent mapping reduces cognitive load; names reflect intent.
+- SRP is mostly upheld; only minor risk of controller accreting policy-like decisions as features grow.
+- Policy purity boundary is clear and enforceable.
+- Suggested improvement: Introduce a short “Architectural Glossary vs Code Index” crosswalk linking each protocol to its production + test conformers.
+
+4. SOLID Evaluation
+- Single Responsibility: Strong. Potential future pressure on ShutdownController (may become a God object). Mitigate with targeted internal sub-coordinators (e.g., PostponeHandler) if complexity increases.
+- Open/Closed: Achieved via protocol conformers. Need a guidance note on when to add a new protocol vs extend existing (currently implied but not codified with examples).
+- Liskov: Protocol contracts are narrow; however, invariants (e.g., Clock.now must be monotonic enough) are not fully documented inside the protocol definitions. Recommend embedding semantic contracts in doc comments.
+- Interface Segregation: Adequate; no bloated composite interfaces.
+- Dependency Inversion: Strong, though global free function log() slightly undermines uniform inversion (consider Logger injection or contextual logging wrapper in controller).
+
+5. Testability & Determinism
+- Abstractions (Clock, TimerFactory, StateStore) enable deterministic tests.
+- Current tests focus heavily on Policy and Scheduler; controller scenario coverage is emerging (e.g., alert coalescing). Add tests for: state persistence failure handling, shutdown with immediate clamped warnings, multi-offset suppression logic under postponement.
+- Absence of property-based or randomized boundary tests (e.g., midnight transitions, large postpone chains) presents future fragility risk.
+
+6. Risk Areas & Gaps
+- Alert lifecycle vs cycle rollover required a post-fact patch: indicates implicit invariants not codified ("no new warnings while previous-cycle alert visible"). Document updated behavior explicitly.
+- Error handling is intentionally “best-effort”; risk of silent data loss (state not persisted) leading to user confusion. Introduce minimal error surfacing policy.
+- Logging contract minimal: structured extensibility (e.g., metadata) not defined; could constrain future observability.
+- Potential time zone / DST transitions: Policy & StateFactory appear to rely on Calendar.current; DST edge cases unspecified.
+- Persistence versioning listed as future improvement – absence may hamper backward-compatible schema evolution.
+
+7. Documentation Quality
+- Clear structural overview and invariants listing.
+- Some duplication (Summary repeated) is acceptable but could be condensed.
+- Missing a concise “Golden Flow Example” (timeline with offsets, postpone sequence, resulting state snapshots).
+- Protocol docs should move invariants adjacent to the protocol definitions (source-of-truth alignment).
+
+8. Extension & Evolution
+- Extension points enumerated; add explicit stability guarantees (e.g., “We treat protocol method list as stable within minor versions”).
+- Consider a compatibility matrix or semantic versioning note for contributors creating external conformers.
+
+9. Concurrency & Threading
+- State mutations funneled through stateQueue: good.
+- Potential subtlety: Logger is asynchronous; ordering between log lines and subsequent state changes may appear inverted when diagnosing issues—document this caveat.
+- No mention of cancellation semantics if app is requested to quit mid-operation; graceful shutdown strategy could be defined.
+
+10. Observability & Logging
+- Logging minimal and non-structured; adding context keys (cycleId, originalShutdownISO, postponeCount) would enhance traceability.
+- Instrumentation for timer scheduling and cancellations is present; add explicit log for suppressed warning events (currently partially implemented in code, but not stated in doc).
+
+11. Security & Reliability
+- System shutdown via AppleScript: potential user permission friction not discussed (prompt behavior, failure modes) – add note.
+- No strategy for tamper detection of persisted state file (could be out-of-scope but worth acknowledgement).
+
+12. Inconsistencies / Potential Confusion
+- Document calls primary warning “largest offset”; code allows multiple offsets plus an optional legacy warningDate—explicit deprecation status of warningDate not codified.
+- Free function log() vs Logger protocol naming: mild inconsistency (logger vs log). Decide canonical style.
+- Invariants mention “duplicates excluded” but dedup logic relies on Set semantics; ordering guarantee after dedup (descending) is implicit—call it out.
+
+13. Action Points (Prioritized)
+P1 (Stability & Correctness)
+ 1. Add explicit alert lifecycle + cycle rollover invariant to doc (single warning per cycle unless postpone occurs).
+ 2. Embed semantic contracts (monotonic expectations, side-effect constraints) directly in protocol doc comments.
+ 3. Add DST and midnight boundary tests (e.g., schedule near 23:59, postpone across day boundary).
+P2 (Observability & Diagnosis)
+ 4. Introduce structured logging (key=value) with cycle identifiers & event types (schedule, postpone, suppress, shutdown, rollover).
+ 5. Add log for suppressed warning due to active alert & due to prior warning in cycle (two distinct reasons).
+P3 (Resilience)
+ 6. Define minimal error handling policy: persistence save failure -> warn level log; repeated failures escalate.
+ 7. Introduce version field in persisted state (anticipate migrations) plus migration test harness.
+P4 (Extensibility Governance)
+ 8. Add “Protocol Stability” section: when adding methods vs creating sibling protocol.
+ 9. Create a CONTRIBUTING note explaining when to add new agent vs extend controller.
+P5 (Documentation & Onboarding)
+ 10. Add Golden Path timeline example (config, offsets, events, user postpone, resulting state timestamps).
+ 11. Add matrix mapping each protocol to concrete production/test implementations.
+P6 (Quality Engineering)
+ 12. Add property-based tests for postpone accumulation (e.g., random sequence within max limit) and offset dedup ordering.
+ 13. Add smoke test verifying no additional warnings after ignore across multiple offsets and after cycle rollover.
+P7 (Consistency & Cleanup)
+ 14. Unify logging entry points (either remove free function or make it forward to injected logger consistently documented).
+ 15. Clarify deprecation status of legacy single warningDate in policy (remove or mark transitional).
+
+14. Suggested Metrics / Health Checks
+- Mean time from config change to correct schedule (covered by scheduling tests).
+- Number of warnings suppressed vs displayed per cycle (telemetry hook for future Logger).
+- Postpone usage distribution (helps tune defaults).
+- Persistence save failure rate (should be ~0; any spike triggers investigation).
+
+15. Future Considerations
+- Introduce state hashing or signature to detect external tampering.
+- Optional user notification center integration as alternate AlertPresenting conformer.
+- Graceful shutdown hook for timers & pending alerts when process receives termination signal.
+
+16. Closing Assessment
+The architecture aligns strongly with its stated principles and provides a solid foundation for incremental evolution. The recent need to patch alert rollover logic reveals that some operational semantics lived only in code, not the doc; closing that gap will prevent regressions. Emphasis should now shift from structural purity to operational robustness (resilience, logging richness, boundary testing). With the enumerated action points, the codebase is well-positioned to remain maintainable and understandable as scope grows.
+
+End of Review.

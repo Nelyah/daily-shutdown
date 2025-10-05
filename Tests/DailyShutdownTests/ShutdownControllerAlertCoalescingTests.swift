@@ -71,11 +71,11 @@ final class ShutdownControllerAlertCoalescingTests: XCTestCase {
         // Simulate user ignoring -> clears active flag
         presenter.delegate?.userIgnored()
 
-        // Third warning after dismissal should present again.
+        // Third warning after dismissal should NOT present again in same cycle (suppressed).
         controller.warningDue()
         let exp2 = expectation(description: "drain2")
         controller._testCurrentState { _ in exp2.fulfill() }
         wait(for: [exp2], timeout: 1.0)
-        XCTAssertEqual(presenter.presentCalls.count, 2, "Warning after dismissal should display")
+        XCTAssertEqual(presenter.presentCalls.count, 1, "Warning after dismissal should remain suppressed until postpone or cycle change")
     }
 }

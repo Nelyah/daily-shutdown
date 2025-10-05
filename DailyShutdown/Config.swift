@@ -41,6 +41,32 @@ public struct AppConfig: Equatable {
 }
 
 public enum CommandLineConfigParser {
+    /// Command line usage / help text enumerating all supported flags.
+    public static var helpText: String {
+        return """
+Usage: daily-shutdown [options]
+
+Options:
+  -h, --help               Show this help text and exit.
+  --in-seconds N           Schedule a shutdown N seconds from now (relative one-off mode).
+  --warn-offsets "a,b,c"    Comma or space separated list of warning offsets (seconds before shutdown).
+                           Example: --warn-offsets "900,300,60" (15m,5m,1m). Order is irrelevant.
+  --postpone-sec S         Override default postpone interval (seconds).
+  --max-postpones K        Override maximum number of postpones allowed in a cycle.
+  --dry-run                Do not actually shut down; simulate cycles and log actions.
+  --no-persist             Disable state persistence (state kept only in memory).
+
+Behavior Notes:
+  * Offsets are de-duplicated and sorted descending; only future offsets schedule warnings.
+  * The largest warning offset drives the primary warning consideration in policy.
+  * Postponing extends the current scheduled shutdown by the effective postpone interval.
+
+Examples:
+  daily-shutdown --in-seconds 3600 --warn-offsets "900,300,60"
+  daily-shutdown --postpone-sec 600 --max-postpones 4
+  daily-shutdown --dry-run --no-persist
+"""
+    }
     /// Parse command line `arguments` (defaults to `CommandLine.arguments`) into an `AppConfig`.
     /// Unspecified flags retain their default values. Unknown flags are ignored.
     public static func parse(arguments: [String] = CommandLine.arguments) -> AppConfig {
@@ -49,6 +75,9 @@ public enum CommandLineConfigParser {
         _ = it.next() // skip exe
         while let a = it.next() {
             switch a {
+            case "--help", "-h":
+                // Help flag is handled in main before calling parse(); ignore here to simplify parsing path.
+                continue
             case "--in-seconds":
                 if let v = it.next(), let s = Int(v) { opts.relativeSeconds = s }
             case "--warn-offsets":
