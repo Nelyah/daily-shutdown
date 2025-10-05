@@ -62,19 +62,11 @@ final class AlertPresenter: AlertPresenting {
         }
         let remainingPostpones = max(0, model.maxPostpones - model.postponesUsed)
         if remainingPostpones > 0 {
-            let intervalMinutes: String
-            if model.postponeIntervalSeconds < 120 {
-                intervalMinutes = "every \(model.postponeIntervalSeconds)s"
-            } else {
-                intervalMinutes = "+\(Int(round(Double(model.postponeIntervalSeconds)/60.0)))m each"
-            }
-            lines.append("Postpones: \(remainingPostpones) remaining (\(intervalMinutes))")
+            let noun = remainingPostpones == 1 ? "postpone" : "postpones"
+            lines.append("\(remainingPostpones) \(noun) remaining")
         } else {
-            lines.append("Postpones: none remaining")
+            lines.append("No postpones remaining")
         }
-        // Short guidance line separated by a blank line for readability.
-        lines.append("")
-        lines.append("Choose Postpone to delay, Shutdown Now to proceed, or Ignore to hide this warning.")
         return lines.joined(separator: "\n")
     }
 

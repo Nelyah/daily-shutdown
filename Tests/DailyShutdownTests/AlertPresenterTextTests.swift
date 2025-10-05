@@ -1,6 +1,5 @@
 import XCTest
 @testable import DailyShutdown
-
 final class AlertPresenterTextTests: XCTestCase {
     func testInformativeTextWhenPostponesRemain() {
         let df = DateFormatter(); df.timeStyle = .short
@@ -13,13 +12,11 @@ final class AlertPresenterTextTests: XCTestCase {
             postponeIntervalSeconds: 600
         )
         let text = AlertPresenter.buildInformativeText(model: model, dateFormatter: df)
-        // Should list scheduled time line with label.
         XCTAssertTrue(text.contains("Scheduled:"))
-        // Original suppressed because identical.
         XCTAssertFalse(text.contains("Original:"))
-        // Postpones line reports remaining count.
-        XCTAssertTrue(text.contains("Postpones: 2 remaining"))
+        XCTAssertTrue(text.contains("2 postpones remaining"))
     }
+}
 
 final class AlertPresenterButtonTitleTests: XCTestCase {
     func testSecondsRenderingUnderTwoMinutes() {
@@ -32,6 +29,7 @@ final class AlertPresenterButtonTitleTests: XCTestCase {
     }
 }
 
+final class AlertPresenterTextNoRemainingTests: XCTestCase {
     func testInformativeTextWhenNoPostponesRemain() {
         let df = DateFormatter(); df.timeStyle = .short
         let now = Date()
@@ -43,7 +41,8 @@ final class AlertPresenterButtonTitleTests: XCTestCase {
             postponeIntervalSeconds: 600
         )
         let text = AlertPresenter.buildInformativeText(model: model, dateFormatter: df)
-        XCTAssertTrue(text.contains("Postpones: none remaining"))
-        XCTAssertFalse(text.contains("remaining ("))
+        XCTAssertTrue(text.contains("No postpones remaining"))
+        // Ensure singular form not incorrectly used for >1 remaining.
+        XCTAssertFalse(text.contains("2 postpones remaining"))
     }
 }
