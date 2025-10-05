@@ -1,11 +1,22 @@
 import Foundation
 import AppKit
 
+    /// Original scheduled shutdown ISO string for the cycle during which the currently active alert
+    /// was presented. Used to detect when a cycle rollover occurs while an alert is still visible
+    /// so that, upon dismissal, warnings for the new cycle can be (re)sheduled.
+    private var activeAlertCycleOriginalISO: String? = nil
 /// Orchestrates the full shutdown cycle: loading/creating state, computing policy plans,
 /// scheduling timers, presenting alerts, handling user actions, and initiating system shutdown.
 /// Thread-safety: state mutations are serialized via `stateQueue`.
 public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate {
     private let config: AppConfig
+    /// Once a warning has been presented in the current cycle, additional scheduled warnings
+    /// (from smaller offsets) are suppressed to avoid multiple sequential popups. This flag
+    /// is cleared when the user postpones (creating a materially new schedule) or when a 
+    /// cycle rollover occurs (post-shutdown or dry-run). Dismissing or ignoring the alert
+    /// does NOT clear this flag, ensuring only a single warning per cycle unless the user
+    /// takes an action that alters the schedule.
+    private var warningPresentedThisCycle: Bool = false
     private let stateStore: StateStore
     private var state: ShutdownState
     private let clock: Clock
@@ -86,8 +97,8 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
     /// Warning timer fired: present alert with current model details.
     public func warningDue() {
         stateQueue.async { [self] in
-            // Coalesce multiple warnings if an alert is already active.
-            if warningAlertActive { return }
+            // Suppress if an alert is active or we already showed a warning this cycle.
+            if warningAlertActive || warningPresentedThisCycle { return }
             guard let shutdownDate = StateFactory.parseISO(state.scheduledShutdownISO),
                   let originalDate = StateFactory.parseISO(state.originalScheduledShutdownISO) else { return }
             let model = AlertModel(
@@ -98,6 +109,8 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
                 postponeIntervalMinutes: Int(round(Double(config.effectivePostponeIntervalSeconds)/60.0))
             )
             warningAlertActive = true
+            warningPresentedThisCycle = true
+            activeAlertCycleOriginalISO = state.originalScheduledShutdownISO
             alertPresenter.present(model: model)
         }
     }
@@ -112,6 +125,9 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
     public func userChosePostpone() {
         stateQueue.async { [self] in
             warningAlertActive = false
+            // Allow a new warning for the newly postponed schedule.
+            warningPresentedThisCycle = false
+            activeAlertCycleOriginalISO = nil
             guard policy.canPostpone(state: state, config: config) else { return }
             policy.applyPostpone(state: &state, config: config, now: clock.now())
             if !config.options.noPersist { stateStore.save(state) }
@@ -126,6 +142,15 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
     public func userIgnored() {
         stateQueue.async { [self] in
             warningAlertActive = false
+            // Intentionally keep warningPresentedThisCycle = true to suppress further alerts.
+            // If the cycle rolled over while the alert was open, re-enable warning for the new cycle.
+            if let presentedCycle = activeAlertCycleOriginalISO, presentedCycle != state.originalScheduledShutdownISO {
+                warningPresentedThisCycle = false
+                activeAlertCycleOriginalISO = nil
+                reschedule() // schedule warnings for the new cycle now that UI is clear
+            } else {
+                activeAlertCycleOriginalISO = nil
+            }
         }
     }
 
@@ -133,20 +158,24 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
     private func performShutdown() {
         stateQueue.async { [self] in
             // Reset any active alert state before rolling over.
-            warningAlertActive = false
+            // Do NOT clear warningAlertActive here if an alert is being displayed; keep it until
+            // user closes it to prevent overlapping alerts across cycle boundary. We still reset
+            // the per-cycle flag so that after dismissal a new warning can be shown for the new cycle.
+            warningPresentedThisCycle = false
             log("Initiating shutdown dryRun=\(config.options.dryRun)")
             if config.options.dryRun {
                 // Roll over to next day for demonstration
                 state = StateFactory.newState(now: clock.now(), config: config)
+                // Defer scheduling warnings until any existing alert is dismissed (if active).
+                if !warningAlertActive { reschedule() }
                 if !config.options.noPersist { stateStore.save(state) }
-                reschedule()
                 return
             }
             actions.shutdown()
             // Schedule next cycle optimistically
             state = StateFactory.newState(now: clock.now(), config: config)
             if !config.options.noPersist { stateStore.save(state) }
-            reschedule()
+            if !warningAlertActive { reschedule() }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { exit(0) }
         }
     }
