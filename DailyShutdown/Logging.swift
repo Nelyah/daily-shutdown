@@ -28,8 +28,8 @@ final class DefaultLogger: Logger {
     func error(_ message: @autoclosure () -> String) { emit(level: "ERROR", message()) }
 }
 
-// Global shared logger (simple for this small app)
-let logger: Logger = DefaultLogger()
+// Global shared logger (mutable for test injection)
+var logger: Logger = DefaultLogger()
 
 // Convenience free function
 func log(_ message: String) {
