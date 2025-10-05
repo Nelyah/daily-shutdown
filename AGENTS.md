@@ -27,7 +27,7 @@
 
 ### 4. Components & Roles
 - `Config.swift`: Parse CLI -> immutable `AppConfig` (warning offsets, postpone interval, limits, flags).
-- `ConfigFile.swift`: Load optional TOML file (`config.toml`) from XDG config directory: `$XDG_CONFIG_HOME/daily-shutdown/config.toml` or `~/.config/daily-shutdown/config.toml`; falls back to legacy `$HOME/Library/Application Support/DailyShutdown/config.toml` if present. Provides baseline defaults merged beneath CLI overrides (precedence: CLI > user prefs > file > built-in defaults).
+- `ConfigFile.swift`: Load optional TOML file (`config.toml`) from XDG config directory: `$XDG_CONFIG_HOME/daily-shutdown/config.toml` or `~/.config/daily-shutdown/config.toml`. No legacy fallback. Provides baseline defaults merged beneath CLI overrides (precedence: CLI > user prefs > file > built-in defaults).
 - `UserPreferences.swift`: Persistent user overrides (daily time, warning offsets) + `ConfigProvider` merging with base config.
 - `State.swift`: `ShutdownState` model + persistence (`StateStore` / `FileStateStore`) + `Clock` + `StateFactory` helpers.
 - `Policy.swift`: Pure scheduling & postpone rules (`ShutdownPolicyType`). No IO, no timers.

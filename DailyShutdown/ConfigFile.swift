@@ -31,13 +31,6 @@ enum ConfigFileLoader {
         if let data = try? Data(contentsOf: primary), let raw = String(data: data, encoding: .utf8) {
             return parse(toml: raw)
         }
-        // Fallback to legacy macOS Application Support path for backwards compatibility.
-        let legacyBase = fm.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/DailyShutdown", isDirectory: true)
-        let legacy = legacyBase.appendingPathComponent("config.toml")
-        if let data = try? Data(contentsOf: legacy), let raw = String(data: data, encoding: .utf8) {
-            return parse(toml: raw)
-        }
         return FileConfig()
     }
 
