@@ -9,9 +9,15 @@ let package = Package(
     products: [
         .executable(name: "DailyShutdown", targets: ["DailyShutdown"]) // Provides the main entry point
     ],
+    dependencies: [
+        .package(url: "https://github.com/dduan/TOMLDecoder.git", from: "0.2.0")
+    ],
     targets: [
         .executableTarget(
             name: "DailyShutdown",
+            dependencies: [
+                .product(name: "TOMLDecoder", package: "TOMLDecoder")
+            ],
             path: "DailyShutdown",
             exclude: [],
             sources: [
@@ -31,7 +37,7 @@ let package = Package(
         ),
         .testTarget(
             name: "DailyShutdownTests",
-            dependencies: ["DailyShutdown"],
+            dependencies: ["DailyShutdown", .product(name: "TOMLDecoder", package: "TOMLDecoder")],
             path: "Tests/DailyShutdownTests"
         )
     ]

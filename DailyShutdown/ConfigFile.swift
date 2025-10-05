@@ -1,4 +1,5 @@
 import Foundation
+import TOMLDecoder
 
 /// Overrides loaded from `config.toml`. Supports both base default fields and runtime option
 /// fields (so users can put most settings in the file). All properties are optional; absent
@@ -34,38 +35,36 @@ enum ConfigFileLoader {
     }
 
     /// Minimal TOML subset parser for key=value & integer arrays. Bool parsing supports true/false.
+    // For compatibility with previous code; now replaced by TOMLDecoder.
     static func parseToml(_ toml: String) -> ConfigFileOverrides {
-        var o = ConfigFileOverrides()
-        toml.split(separator: "\n").forEach { lineSub in
-            let line = lineSub.trimmingCharacters(in: .whitespaces)
-            if line.isEmpty || line.hasPrefix("#") { return }
-            guard let eq = line.firstIndex(of: "=") else { return }
-            let key = line[..<eq].trimmingCharacters(in: .whitespaces)
-            let rawValue = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
-            func parseArray(_ v: String) -> [Int]? {
-                guard v.hasPrefix("[") && v.hasSuffix("]") else { return nil }
-                let inner = v.dropFirst().dropLast()
-                let parts = inner.split{ $0 == "," || $0 == " " }.compactMap { Int($0) }
-                return parts.isEmpty ? nil : parts
-            }
-            switch key {
-            // Base defaults
-            case "dailyHour": o.dailyHour = Int(rawValue)
-            case "dailyMinute": o.dailyMinute = Int(rawValue)
-            case "defaultPostponeIntervalSeconds": o.defaultPostponeIntervalSeconds = Int(rawValue)
-            case "defaultMaxPostpones": o.defaultMaxPostpones = Int(rawValue)
-            case "defaultWarningOffsets": o.defaultWarningOffsets = parseArray(rawValue)
-            // Runtime option style overrides
-            case "relativeSeconds": o.relativeSeconds = Int(rawValue)
-            case "warnOffsets": o.warnOffsets = parseArray(rawValue)
-            case "dryRun": o.dryRun = (rawValue.lowercased() == "true")
-            case "noPersist": o.noPersist = (rawValue.lowercased() == "true")
-            case "postponeIntervalSeconds": o.postponeIntervalSeconds = Int(rawValue)
-            case "maxPostpones": o.maxPostpones = Int(rawValue)
-            default: break
-            }
+        struct FileConfigDecodable: Decodable {
+            var dailyHour: Int?
+            var dailyMinute: Int?
+            var defaultPostponeIntervalSeconds: Int?
+            var defaultMaxPostpones: Int?
+            var defaultWarningOffsets: [Int]?
+            var relativeSeconds: Int?
+            var warnOffsets: [Int]?
+            var dryRun: Bool?
+            var noPersist: Bool?
+            var postponeIntervalSeconds: Int?
+            var maxPostpones: Int?
         }
-        return o
+        let decoder = TOMLDecoder()
+        guard let model = try? decoder.decode(FileConfigDecodable.self, from: toml) else { return ConfigFileOverrides() }
+        return ConfigFileOverrides(
+            dailyHour: model.dailyHour,
+            dailyMinute: model.dailyMinute,
+            defaultPostponeIntervalSeconds: model.defaultPostponeIntervalSeconds,
+            defaultMaxPostpones: model.defaultMaxPostpones,
+            defaultWarningOffsets: model.defaultWarningOffsets,
+            relativeSeconds: model.relativeSeconds,
+            warnOffsets: model.warnOffsets,
+            dryRun: model.dryRun,
+            noPersist: model.noPersist,
+            postponeIntervalSeconds: model.postponeIntervalSeconds,
+            maxPostpones: model.maxPostpones
+        )
     }
 }
 
