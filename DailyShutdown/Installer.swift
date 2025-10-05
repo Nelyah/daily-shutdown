@@ -13,7 +13,18 @@ enum Installer {
             let plistPath = try installLaunchAgent(executable: appSupportBin)
             print("Installed LaunchAgent -> \(plistPath)")
             print("Executable location -> \(appSupportBin)")
-            print("Load with: launchctl load -w \(plistPath)")
+            // Attempt to load (or reload) immediately.
+            _ = runTask("/bin/launchctl", ["unload", plistPath]) // ignore errors (may not be loaded yet)
+            let loadResult = runTask("/bin/launchctl", ["load", "-w", plistPath])
+            if loadResult.exitCode == 0 {
+                print("LaunchAgent loaded (exit=0)")
+            } else {
+                print("LaunchAgent load returned exit=\(loadResult.exitCode). You may need to run: launchctl load -w \(plistPath)")
+            }
+            // Print effective config so user immediately sees active settings.
+            let effective = CommandLineConfigParser.parseWithFile()
+            print("\n# Current Effective Configuration\n" + CommandLineConfigParser.effectiveConfigTOML(effective))
+            print("Install complete. DailyShutdown should now start at login.")
         } catch {
             fputs("Install failed: \(error)\n", stderr)
             exit(1)
@@ -79,5 +90,15 @@ enum Installer {
             case .unableToLocateExecutable: return "Unable to determine path to running executable"
             }
         }
+    }
+
+    // MARK: - Helpers
+    private struct TaskResult { let exitCode: Int32 }
+    @discardableResult private static func runTask(_ path: String, _ args: [String]) -> TaskResult {
+        let proc = Process()
+        proc.launchPath = path
+        proc.arguments = args
+        do { try proc.run(); proc.waitUntilExit() } catch { return TaskResult(exitCode: -1) }
+        return TaskResult(exitCode: proc.terminationStatus)
     }
 }
