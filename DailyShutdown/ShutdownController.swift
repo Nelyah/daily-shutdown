@@ -34,6 +34,11 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
     /// shutdown cycle rolls over. Prevents multiple overlapping warning windows.
     private var warningAlertActive: Bool = false
 
+    /// The last shutdown `Date` that was scheduled (from the most recent policy plan). Stored
+    /// so that we can evaluate wake-from-sleep edge cases where timers may have been paused.
+    /// Invariant: Mutated only on `stateQueue` inside `reschedule()`.
+    private var lastScheduledShutdownDate: Date? = nil
+
     /// Create a controller with injected agents; defaults are provided for production runtime.
     /// State is initialized immediately (and persisted unless `--no-persist`). Delegates are then wired.
     public init(config: AppConfig,
@@ -77,6 +82,8 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
         stateQueue.async { [self] in
             let now = clock.now()
             guard let plan = policy.plan(for: state, config: config, now: now) else { return }
+            // Track the exact shutdown date used for scheduling for subsequent stale-cycle checks.
+            lastScheduledShutdownDate = plan.shutdownDate
             scheduler.schedule(
                 shutdownDate: plan.shutdownDate,
                 warningDate: plan.warningDate,
@@ -157,6 +164,25 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
     /// Perform (or simulate) system shutdown, roll state into next cycle, and schedule again.
     private func performShutdown() {
         stateQueue.async { [self] in
+            // Guard against stale shutdown events caused by the machine sleeping past the
+            // originally scheduled day (e.g., lid closed overnight). We only execute a
+            // shutdown if (a) we are past the scheduled time AND (b) today is the same
+            // calendar day as the scheduled shutdown date. Otherwise we treat it as a
+            // stale cycle and roll forward without shutting down.
+            if let scheduled = lastScheduledShutdownDate {
+                let now = clock.now()
+                if now > scheduled {
+                    let cal = Calendar.current
+                    if !cal.isDate(now, inSameDayAs: scheduled) {
+                        log("Skipping stale shutdown: scheduled=\(scheduled) now=\(now) (different day)")
+                        warningPresentedThisCycle = false
+                        state = StateFactory.newState(now: now, config: config)
+                        if !config.options.noPersist { stateStore.save(state) }
+                        if !warningAlertActive { reschedule() }
+                        return
+                    }
+                }
+            }
             // Reset any active alert state before rolling over.
             // Do NOT clear warningAlertActive here if an alert is being displayed; keep it until
             // user closes it to prevent overlapping alerts across cycle boundary. We still reset
