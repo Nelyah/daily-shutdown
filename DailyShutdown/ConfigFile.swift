@@ -64,7 +64,7 @@ enum ConfigFileLoader {
             log("Config: could not decode file as UTF-8 at \(path.path)")
             return ConfigFileOverrides()
         }
-        var overrides = parseToml(raw)
+        let overrides = parseToml(raw)
         let (validated, warnings) = validateAndNormalize(overrides)
         logSummary(origin: path.path, overrides: validated, warnings: warnings)
         return validated
