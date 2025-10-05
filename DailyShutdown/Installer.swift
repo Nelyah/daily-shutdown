@@ -6,36 +6,53 @@ import Foundation
 var installerCapturedCommands: [String] = []
 
 enum Installer {
+    // MARK: Constants & Environment
+    private enum C {
+        static let label = "dev.daily.shutdown"
+        static let binaryName = "DailyShutdown"
+    }
     private static var fileManager: FileManager { FileManager.default }
     private static var env: [String:String] { ProcessInfo.processInfo.environment }
 
+    // Encapsulates all filesystem locations used for install/uninstall derived from a (possibly overridden) home directory.
+    private struct InstallPaths {
+        let home: URL
+        var agentsDir: URL { home.appendingPathComponent("Library/LaunchAgents", isDirectory: true) }
+        var appSupportDir: URL { home.appendingPathComponent("Library/Application Support/DailyShutdown", isDirectory: true) }
+        var binDir: URL { appSupportDir.appendingPathComponent("bin", isDirectory: true) }
+        var binary: URL { binDir.appendingPathComponent(C.binaryName) }
+        var plist: URL { agentsDir.appendingPathComponent("\(C.label).plist") }
+    }
+
     /// Resolve the effective home directory (test override supported via DAILY_SHUTDOWN_HOME_OVERRIDE).
-    private static func homeDir() -> URL {
+    private static func resolvedHomeDirectory() -> URL {
         if let override = env["DAILY_SHUTDOWN_HOME_OVERRIDE"], !override.isEmpty {
             return URL(fileURLWithPath: override, isDirectory: true)
         }
         return fileManager.homeDirectoryForCurrentUser
     }
 
+    private static func makePaths() -> InstallPaths { InstallPaths(home: resolvedHomeDirectory()) }
+
     /// Entry point invoked by `daily-shutdown install`.
     static func run() {
         do {
-            let exePath = try currentExecutablePath()
-            let appSupportBin = try ensureBinaryInstalled(from: exePath)
-            let plistPath = try installLaunchAgent(executable: appSupportBin)
-            print("Installed LaunchAgent -> \(plistPath)")
-            print("Executable location -> \(appSupportBin)")
+            let paths = makePaths()
+            let sourceBinary = try resolveCurrentExecutable()
+            try stageBinary(source: sourceBinary, to: paths.binary)
+            try writeLaunchAgentPlist(paths: paths)
+            print("Installed LaunchAgent -> \(paths.plist.path)")
+            print("Executable location -> \(paths.binary.path)")
             // Modern launchd workflow: bootout (ignore errors) then bootstrap.
             let uid = getuid()
             let domain = "gui/\(uid)"
-            let label = "dev.daily.shutdown"
             // bootout expects domain/label path
-            _ = runTask("/bin/launchctl", ["bootout", "\(domain)/\(label)"]) // ignore failures if not loaded
-            let bootstrapResult = runTask("/bin/launchctl", ["bootstrap", domain, plistPath])
+            _ = runTask("/bin/launchctl", ["bootout", "\(domain)/\(C.label)"]) // ignore failures if not loaded
+            let bootstrapResult = runTask("/bin/launchctl", ["bootstrap", domain, paths.plist.path])
             if bootstrapResult.exitCode == 0 {
                 print("LaunchAgent bootstrapped into domain \(domain) (exit=0)")
             } else {
-                print("LaunchAgent bootstrap returned exit=\(bootstrapResult.exitCode). Try manually: launchctl bootout \(domain)/\(label); launchctl bootstrap \(domain) \(plistPath)")
+                print("LaunchAgent bootstrap returned exit=\(bootstrapResult.exitCode). Try manually: launchctl bootout \(domain)/\(C.label); launchctl bootstrap \(domain) \(paths.plist.path)")
             }
             // Print effective config so user immediately sees active settings.
             let effective = CommandLineConfigParser.parseWithFile()
@@ -49,36 +66,25 @@ enum Installer {
 
     /// Uninstall previously installed LaunchAgent and helper binary.
     static func uninstall() {
+        let paths = makePaths()
         let fm = fileManager
-        let identifier = "dev.daily.shutdown"
-        let agentsDir = homeDir()
-            .appendingPathComponent("Library", isDirectory: true)
-            .appendingPathComponent("LaunchAgents", isDirectory: true)
-        let plistURL = agentsDir.appendingPathComponent("\(identifier).plist")
-        if fm.fileExists(atPath: plistURL.path) {
-            let uid = getuid()
-            let domain = "gui/\(uid)"
-            _ = runTask("/bin/launchctl", ["bootout", "\(domain)/\(identifier)"]) // ignore failure
-            do { try fm.removeItem(at: plistURL); print("Removed LaunchAgent plist -> \(plistURL.path)") } catch { print("Failed to remove plist: \(error)") }
+        if fm.fileExists(atPath: paths.plist.path) {
+            let uid = getuid(); let domain = "gui/\(uid)"
+            _ = runTask("/bin/launchctl", ["bootout", "\(domain)/\(C.label)"]) // ignore errors
+            do { try fm.removeItem(at: paths.plist); print("Removed LaunchAgent plist -> \(paths.plist.path)") } catch { print("Failed to remove plist: \(error)") }
         } else {
             print("LaunchAgent plist not found (nothing to remove)")
         }
-        let binDir = homeDir()
-            .appendingPathComponent("Library", isDirectory: true)
-            .appendingPathComponent("Application Support", isDirectory: true)
-            .appendingPathComponent("DailyShutdown", isDirectory: true)
-            .appendingPathComponent("bin", isDirectory: true)
-        let binPath = binDir.appendingPathComponent("DailyShutdown")
-        if fm.fileExists(atPath: binPath.path) {
-            do { try fm.removeItem(at: binPath); print("Removed installed binary -> \(binPath.path)") } catch { print("Failed to remove binary: \(error)") }
+        if fm.fileExists(atPath: paths.binary.path) {
+            do { try fm.removeItem(at: paths.binary); print("Removed installed binary -> \(paths.binary.path)") } catch { print("Failed to remove binary: \(error)") }
         } else {
             print("Installed binary not found (nothing to remove)")
         }
         print("Uninstall complete.")
     }
 
-    /// Resolve the currently running executable location.
-    private static func currentExecutablePath() throws -> String {
+    /// Determine the path of the currently running executable (or overridden path in tests).
+    private static func resolveCurrentExecutable() throws -> String {
         if let override = env["DAILY_SHUTDOWN_EXECUTABLE_OVERRIDE"], !override.isEmpty {
             return URL(fileURLWithPath: override).standardizedFileURL.path
         }
@@ -87,49 +93,31 @@ enum Installer {
         return URL(fileURLWithPath: path).standardizedFileURL.path
     }
 
-    /// Copy the running executable into ~/Library/Application Support/DailyShutdown/bin/DailyShutdown
-    /// (overwriting any existing copy) to provide a stable path for the LaunchAgent.
-    private static func ensureBinaryInstalled(from sourcePath: String) throws -> String {
-        let supportDir = homeDir()
-            .appendingPathComponent("Library", isDirectory: true)
-            .appendingPathComponent("Application Support", isDirectory: true)
-            .appendingPathComponent("DailyShutdown", isDirectory: true)
-            .appendingPathComponent("bin", isDirectory: true)
-        try fileManager.createDirectory(at: supportDir, withIntermediateDirectories: true)
-        let dest = supportDir.appendingPathComponent("DailyShutdown")
-        if fileManager.fileExists(atPath: dest.path) {
-            _ = try? fileManager.removeItem(at: dest)
-        }
-        try fileManager.copyItem(atPath: sourcePath, toPath: dest.path)
-        // Ensure executable permission remains (copy preserves, but be defensive)
-        let attrs = try fileManager.attributesOfItem(atPath: dest.path)
+    /// Copy the running executable to the managed binary path (overwriting existing copy).
+    private static func stageBinary(source: String, to destinationPath: URL) throws {
+        try fileManager.createDirectory(at: destinationPath.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if fileManager.fileExists(atPath: destinationPath.path) { _ = try? fileManager.removeItem(at: destinationPath) }
+        try fileManager.copyItem(atPath: source, toPath: destinationPath.path)
+        // Reassert executable permissions (defensive).
+        let attrs = try fileManager.attributesOfItem(atPath: destinationPath.path)
         if let perms = attrs[.posixPermissions] as? NSNumber {
             let mode = perms.uint16Value | 0o755
-            try fileManager.setAttributes([.posixPermissions: NSNumber(value: mode)], ofItemAtPath: dest.path)
+            try fileManager.setAttributes([.posixPermissions: NSNumber(value: mode)], ofItemAtPath: destinationPath.path)
         }
-        return dest.path
     }
 
-    /// Install (write / overwrite) a LaunchAgent plist referencing the given executable.
-    /// The agent runs the binary with no extra flags; user can still configure via TOML file.
-    private static func installLaunchAgent(executable: String) throws -> String {
-        let agentsDir = homeDir()
-            .appendingPathComponent("Library", isDirectory: true)
-            .appendingPathComponent("LaunchAgents", isDirectory: true)
-        try fileManager.createDirectory(at: agentsDir, withIntermediateDirectories: true)
-        let identifier = "dev.daily.shutdown"
-        let plistURL = agentsDir.appendingPathComponent("\(identifier).plist")
-        let programArgs: [String] = [executable]
+    /// Write (overwrite) the LaunchAgent property list pointing at the staged binary.
+    private static func writeLaunchAgentPlist(paths: InstallPaths) throws {
+        try fileManager.createDirectory(at: paths.agentsDir, withIntermediateDirectories: true)
         let dict: [String: Any] = [
-            "Label": identifier,
-            "ProgramArguments": programArgs,
+            "Label": C.label,
+            "ProgramArguments": [paths.binary.path],
             "RunAtLoad": true,
             "KeepAlive": ["SuccessfulExit": false],
             "ProcessType": "Background"
         ]
         let data = try PropertyListSerialization.data(fromPropertyList: dict, format: .xml, options: 0)
-        try data.write(to: plistURL)
-        return plistURL.path
+        try data.write(to: paths.plist)
     }
 
     enum InstallError: Error, CustomStringConvertible {
