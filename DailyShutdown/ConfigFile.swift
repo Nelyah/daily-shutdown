@@ -29,8 +29,10 @@ enum ConfigFileLoader {
         if let explicit = env["DAILY_SHUTDOWN_CONFIG_PATH"], !explicit.isEmpty {
             let url = URL(fileURLWithPath: explicit, isDirectory: false)
             if let data = try? Data(contentsOf: url), let raw = String(data: data, encoding: .utf8) {
-                log("Config: loaded overrides from explicit path \(explicit)")
-                return parseToml(raw)
+                var overrides = parseToml(raw)
+                let (validated, warnings) = validateAndNormalize(overrides)
+                logSummary(origin: explicit, overrides: validated, warnings: warnings)
+                return validated
             } else {
                 log("Config: explicit path set but not readable (\(explicit))")
             }
@@ -45,8 +47,10 @@ enum ConfigFileLoader {
             log("Config: no config file found at \(path.path)")
             return ConfigFileOverrides()
         }
-        log("Config: loaded overrides from \(path.path)")
-        return parseToml(raw)
+        var overrides = parseToml(raw)
+        let (validated, warnings) = validateAndNormalize(overrides)
+        logSummary(origin: path.path, overrides: validated, warnings: warnings)
+        return validated
     }
 
     /// Minimal TOML subset parser for key=value & integer arrays. Bool parsing supports true/false.
@@ -80,6 +84,77 @@ enum ConfigFileLoader {
             postponeIntervalSeconds: model.postponeIntervalSeconds,
             maxPostpones: model.maxPostpones
         )
+    }
+
+    // MARK: - Validation & Normalization
+    private static func validateAndNormalize(_ o: ConfigFileOverrides) -> (ConfigFileOverrides, [String]) {
+        var v = o
+        var warnings: [String] = []
+
+        func rangeCheck(_ value: Int?, name: String, range: ClosedRange<Int>) -> Int? {
+            guard let value = value else { return nil }
+            if !range.contains(value) {
+                warnings.append("\(name) out of range: \(value)")
+                return nil
+            }
+            return value
+        }
+        v.dailyHour = rangeCheck(v.dailyHour, name: "dailyHour", range: 0...23)
+        v.dailyMinute = rangeCheck(v.dailyMinute, name: "dailyMinute", range: 0...59)
+
+        if let p = v.defaultPostponeIntervalSeconds, p <= 0 {
+            warnings.append("defaultPostponeIntervalSeconds must be > 0 (was \(p))")
+            v.defaultPostponeIntervalSeconds = nil
+        }
+        if let p = v.postponeIntervalSeconds, p <= 0 {
+            warnings.append("postponeIntervalSeconds must be > 0 (was \(p))")
+            v.postponeIntervalSeconds = nil
+        }
+        if let m = v.defaultMaxPostpones, m < 0 {
+            warnings.append("defaultMaxPostpones must be >= 0 (was \(m))")
+            v.defaultMaxPostpones = nil
+        }
+        if let m = v.maxPostpones, m < 0 {
+            warnings.append("maxPostpones must be >= 0 (was \(m))")
+            v.maxPostpones = nil
+        }
+        if let rel = v.relativeSeconds, rel <= 0 {
+            warnings.append("relativeSeconds must be > 0 (was \(rel))")
+            v.relativeSeconds = nil
+        }
+
+        func normalizeOffsets(_ arr: [Int]?) -> [Int]? {
+            guard let arr = arr else { return nil }
+            let filtered = Array(Set(arr.filter { $0 > 0 })).sorted(by: >)
+            if filtered.isEmpty { return nil }
+            return filtered
+        }
+        let normalizedDefaults = normalizeOffsets(v.defaultWarningOffsets)
+        if v.defaultWarningOffsets != normalizedDefaults { warnings.append("defaultWarningOffsets normalized/deduped") }
+        v.defaultWarningOffsets = normalizedDefaults
+        let normalizedWarn = normalizeOffsets(v.warnOffsets)
+        if v.warnOffsets != normalizedWarn { warnings.append("warnOffsets normalized/deduped") }
+        v.warnOffsets = normalizedWarn
+
+        return (v, warnings)
+    }
+
+    private static func logSummary(origin: String, overrides: ConfigFileOverrides, warnings: [String]) {
+        var setKeys: [String] = []
+        if overrides.dailyHour != nil { setKeys.append("dailyHour") }
+        if overrides.dailyMinute != nil { setKeys.append("dailyMinute") }
+        if overrides.defaultPostponeIntervalSeconds != nil { setKeys.append("defaultPostponeIntervalSeconds") }
+        if overrides.defaultMaxPostpones != nil { setKeys.append("defaultMaxPostpones") }
+        if overrides.defaultWarningOffsets != nil { setKeys.append("defaultWarningOffsets") }
+        if overrides.relativeSeconds != nil { setKeys.append("relativeSeconds") }
+        if overrides.warnOffsets != nil { setKeys.append("warnOffsets") }
+        if overrides.dryRun != nil { setKeys.append("dryRun") }
+        if overrides.noPersist != nil { setKeys.append("noPersist") }
+        if overrides.postponeIntervalSeconds != nil { setKeys.append("postponeIntervalSeconds") }
+        if overrides.maxPostpones != nil { setKeys.append("maxPostpones") }
+        let keysDesc = setKeys.isEmpty ? "(none)" : setKeys.joined(separator: ",")
+        log("Config: applied overrides from \(origin) keys=[\(keysDesc)] warnings=\(warnings.count)")
+        for w in warnings { log("Config warning: \(w)") }
     }
 }
 
