@@ -231,16 +231,24 @@ public final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate
             warningPresentedThisCycle = false
             log("Initiating shutdown dryRun=\(config.options.dryRun)")
             if config.options.dryRun {
-                // Roll over to next day for demonstration
-                state = StateFactory.newState(now: clock.now(), config: config)
-                // Defer scheduling warnings until any existing alert is dismissed (if active).
-                if warningAlertActive {
-                    cycleCompletedAwaitingAlertDismissal = true
+                // Dry-run behavior: if running in relative one-off mode (`--in-seconds`), we
+                // intentionally DO NOT roll into a new cycle or schedule further timers once
+                // the shutdown moment has passed. This matches user expectation of a single
+                // demonstration run. For daily mode (no relativeSeconds) we preserve previous
+                // behavior of rolling forward to the next day so repeated manual tests are
+                // still convenient.
+                if config.options.relativeSeconds != nil {
+                    log("Dry-run complete (one-off relative). Halting further scheduling.")
+                    // Mark that any still-visible alert is now stale; user interaction simply dismisses.
+                    if warningAlertActive { cycleCompletedAwaitingAlertDismissal = true }
+                    return
                 } else {
-                    reschedule()
+                    // Daily mode: continue to roll to next day for iterative observation.
+                    state = StateFactory.newState(now: clock.now(), config: config)
+                    if warningAlertActive { cycleCompletedAwaitingAlertDismissal = true } else { reschedule() }
+                    if !config.options.noPersist { stateStore.save(state) }
+                    return
                 }
-                if !config.options.noPersist { stateStore.save(state) }
-                return
             }
             actions.shutdown()
             // Schedule next cycle optimistically
