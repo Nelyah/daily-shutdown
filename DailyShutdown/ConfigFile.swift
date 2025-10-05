@@ -21,6 +21,7 @@ struct ConfigFileOverrides: Equatable {
 }
 
 enum ConfigFileLoader {
+    private static let maxConfigBytes: Int = 256 * 1024 // 256 KB safety cap
     /// Locate and parse the TOML config file returning overrides (all optionals).
     static func loadOverrides() -> ConfigFileOverrides {
         let fm = FileManager.default
@@ -28,11 +29,19 @@ enum ConfigFileLoader {
         // Test / power-user override: if DAILY_SHUTDOWN_CONFIG_PATH is set, use it directly.
         if let explicit = env["DAILY_SHUTDOWN_CONFIG_PATH"], !explicit.isEmpty {
             let url = URL(fileURLWithPath: explicit, isDirectory: false)
-            if let data = try? Data(contentsOf: url), let raw = String(data: data, encoding: .utf8) {
-                var overrides = parseToml(raw)
-                let (validated, warnings) = validateAndNormalize(overrides)
-                logSummary(origin: explicit, overrides: validated, warnings: warnings)
-                return validated
+            if let data = try? Data(contentsOf: url) {
+                if data.count > maxConfigBytes {
+                    log("Config: explicit file exceeds size cap (\(data.count) > \(maxConfigBytes)) ignoring")
+                    return ConfigFileOverrides()
+                }
+                if let raw = String(data: data, encoding: .utf8) {
+                    let overrides = parseToml(raw)
+                    let (validated, warnings) = validateAndNormalize(overrides)
+                    logSummary(origin: explicit, overrides: validated, warnings: warnings)
+                    return validated
+                } else {
+                    log("Config: explicit path set but not readable (\(explicit))")
+                }
             } else {
                 log("Config: explicit path set but not readable (\(explicit))")
             }
@@ -43,8 +52,16 @@ enum ConfigFileLoader {
             return fm.homeDirectoryForCurrentUser.appendingPathComponent(".config", isDirectory: true)
         }()
         let path = xdgBase.appendingPathComponent("daily-shutdown", isDirectory: true).appendingPathComponent("config.toml")
-        guard let data = try? Data(contentsOf: path), let raw = String(data: data, encoding: .utf8) else {
+        guard let data = try? Data(contentsOf: path) else {
             log("Config: no config file found at \(path.path)")
+            return ConfigFileOverrides()
+        }
+        if data.count > maxConfigBytes {
+            log("Config: file exceeds size cap (\(data.count) > \(maxConfigBytes)) ignoring")
+            return ConfigFileOverrides()
+        }
+        guard let raw = String(data: data, encoding: .utf8) else {
+            log("Config: could not decode file as UTF-8 at \(path.path)")
             return ConfigFileOverrides()
         }
         var overrides = parseToml(raw)
@@ -70,7 +87,13 @@ enum ConfigFileLoader {
             var maxPostpones: Int?
         }
         let decoder = TOMLDecoder()
-        guard let model = try? decoder.decode(FileConfigDecodable.self, from: toml) else { return ConfigFileOverrides() }
+        let model: FileConfigDecodable
+        do {
+            model = try decoder.decode(FileConfigDecodable.self, from: toml)
+        } catch {
+            log("Config: TOML decode failed: \(error)")
+            return ConfigFileOverrides()
+        }
         return ConfigFileOverrides(
             dailyHour: model.dailyHour,
             dailyMinute: model.dailyMinute,

@@ -148,25 +148,24 @@ defaultWarningOffsets = [\(offsets)]
     /// Render an effective (post-merge) configuration to TOML for inspection. Includes
     /// both default domain values and resolved runtime options.
     static func effectiveConfigTOML(_ config: AppConfig) -> String {
-        let offsets = config.defaultWarningOffsets.map(String.init).joined(separator: ", ")
-        let warnOffsetsOpt = config.options.warnOffsets?.map(String.init).joined(separator: ", ")
-        return """
-# Effective DailyShutdown configuration (TOML)
-# Generated at: \(Date())
-
-dailyHour = \(config.dailyHour)
-dailyMinute = \(config.dailyMinute)
-defaultPostponeIntervalSeconds = \(config.defaultPostponeIntervalSeconds)
-defaultMaxPostpones = \(config.defaultMaxPostpones)
-defaultWarningOffsets = [\(offsets)]
-
-# Runtime options (nil / absent values omitted)
-relativeSeconds = \(config.options.relativeSeconds.map(String.init) ?? "")
-warnOffsets = [\(warnOffsetsOpt ?? "")] 
-dryRun = \(config.options.dryRun)
-noPersist = \(config.options.noPersist)
-postponeIntervalSeconds = \(config.options.postponeIntervalSeconds.map(String.init) ?? "")
-maxPostpones = \(config.options.maxPostpones.map(String.init) ?? "")
-"""
+        var lines: [String] = [
+            "# Effective DailyShutdown configuration (TOML)",
+            "# Generated at: \(Date())",
+            "",
+            "dailyHour = \(config.dailyHour)",
+            "dailyMinute = \(config.dailyMinute)",
+            "defaultPostponeIntervalSeconds = \(config.defaultPostponeIntervalSeconds)",
+            "defaultMaxPostpones = \(config.defaultMaxPostpones)",
+            "defaultWarningOffsets = [\(config.defaultWarningOffsets.map(String.init).joined(separator: ", "))]",
+            "",
+            "# Runtime options (only showing those explicitly set / true)",
+        ]
+        if let rel = config.options.relativeSeconds { lines.append("relativeSeconds = \(rel)") } else { lines.append("# relativeSeconds = (unset)") }
+        if let offs = config.options.warnOffsets { lines.append("warnOffsets = [\(offs.map(String.init).joined(separator: ", "))]") } else { lines.append("# warnOffsets = (unset)") }
+        if config.options.dryRun { lines.append("dryRun = true") } else { lines.append("# dryRun = false") }
+        if config.options.noPersist { lines.append("noPersist = true") } else { lines.append("# noPersist = false") }
+        if let p = config.options.postponeIntervalSeconds { lines.append("postponeIntervalSeconds = \(p)") } else { lines.append("# postponeIntervalSeconds = (unset)") }
+        if let m = config.options.maxPostpones { lines.append("maxPostpones = \(m)") } else { lines.append("# maxPostpones = (unset)") }
+        return lines.joined(separator: "\n") + "\n"
     }
 }
