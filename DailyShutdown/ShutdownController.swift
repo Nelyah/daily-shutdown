@@ -10,13 +10,10 @@ import AppKit
 /// Thread-safety: state mutations are serialized via `stateQueue`.
 final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate {
     private let config: AppConfig
-    /// Once a warning has been presented in the current cycle, additional scheduled warnings
-/// are suppressed ONLY while an alert window is currently active. After the user dismisses
-    /// (Ignore) the alert, later warning offsets in the same cycle are allowed to present.
-    /// This prevents duplicate overlapping alerts while still surfacing escalating warnings
-    /// closer to the shutdown time. The flag is also cleared on postpone (new schedule) or
-    /// cycle rollover.
-    private var warningPresentedThisCycle: Bool = false
+    /// Multiple warning offsets are supported. While an alert window is visible, subsequent
+    /// warning timer firings are ignored (coalesced) via `warningAlertActive`. After dismissal
+    /// (Ignore) later warning offsets in the same cycle may still present. No extra state is
+    /// required beyond `warningAlertActive`.
     private let stateStore: StateStore
     private var state: ShutdownState
     private let clock: Clock
@@ -112,8 +109,8 @@ final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate {
     /// Warning timer fired: present alert with current model details.
     func warningDue() {
         stateQueue.async { [self] in
-            // Suppress if an alert is active or we already showed a warning this cycle.
-            if warningAlertActive || warningPresentedThisCycle { return }
+            // Suppress if an alert is already active (coalesce overlapping warnings).
+            if warningAlertActive { return }
             guard let shutdownDate = StateFactory.parseISO(state.scheduledShutdownISO),
                   let originalDate = StateFactory.parseISO(state.originalScheduledShutdownISO) else { return }
             let model = AlertModel(
@@ -124,7 +121,6 @@ final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate {
                 postponeIntervalSeconds: config.effectivePostponeIntervalSeconds
             )
             warningAlertActive = true
-            warningPresentedThisCycle = true
             activeAlertCycleOriginalISO = state.originalScheduledShutdownISO
             alertPresenter.present(model: model)
         }
@@ -146,8 +142,6 @@ final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate {
                 warningAlertActive = false
                 cycleCompletedAwaitingAlertDismissal = false
                 activeAlertCycleOriginalISO = nil
-                // Allow warnings for the new cycle.
-                warningPresentedThisCycle = false
                 reschedule()
                 return
             }
@@ -160,13 +154,10 @@ final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate {
                     log("Ignoring postpone: shutdown time already passed (\(scheduledDate))")
                     warningAlertActive = false
                     activeAlertCycleOriginalISO = nil
-                    // Do not clear warningPresentedThisCycle so no new alerts appear for this stale cycle.
                     return
                 }
             }
             warningAlertActive = false
-            // Allow a new warning for the newly postponed schedule.
-            warningPresentedThisCycle = false
             activeAlertCycleOriginalISO = nil
             guard policy.canPostpone(state: state, config: config) else { return }
             policy.applyPostpone(state: &state, config: config, now: clock.now())
@@ -185,13 +176,11 @@ final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate {
             if cycleCompletedAwaitingAlertDismissal {
                 // Final timer already advanced the cycle; simply enable scheduling for new cycle.
                 cycleCompletedAwaitingAlertDismissal = false
-                warningPresentedThisCycle = false
                 activeAlertCycleOriginalISO = nil
                 reschedule()
                 return
             }
             // Allow subsequent warnings in the same cycle (user ignored only this alert).
-            warningPresentedThisCycle = false
             if let presentedCycle = activeAlertCycleOriginalISO, presentedCycle != state.originalScheduledShutdownISO {
                 // Cycle changed while alert open; enable scheduling for new cycle.
                 activeAlertCycleOriginalISO = nil
@@ -216,7 +205,6 @@ final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate {
                     let cal = Calendar.current
                     if !cal.isDate(now, inSameDayAs: scheduled) {
                         log("Skipping stale shutdown: scheduled=\(scheduled) now=\(now) (different day)")
-                        warningPresentedThisCycle = false
                         state = StateFactory.newState(now: now, config: config)
                         if !config.options.noPersist { stateStore.save(state) }
                         if !warningAlertActive { reschedule() }
@@ -226,9 +214,7 @@ final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate {
             }
             // Reset any active alert state before rolling over.
             // Do NOT clear warningAlertActive here if an alert is being displayed; keep it until
-            // user closes it to prevent overlapping alerts across cycle boundary. We still reset
-            // the per-cycle flag so that after dismissal a new warning can be shown for the new cycle.
-            warningPresentedThisCycle = false
+            // user closes it to prevent overlapping alerts across cycle boundary.
             log("Initiating shutdown dryRun=\(config.options.dryRun)")
             if config.options.dryRun {
                 // Dry-run behavior: if running in relative one-off mode (`--in-seconds`), we
