@@ -28,6 +28,7 @@ let package = Package(
                 "Policy.swift",
                 "Scheduler.swift",
                 "AlertPresenter.swift",
+                "Reminders.swift",
                 "SystemActions.swift",
                 "Logging.swift",
                 "ShutdownController.swift",
