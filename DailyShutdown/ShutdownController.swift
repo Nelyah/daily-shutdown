@@ -11,11 +11,11 @@ import AppKit
 final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate {
     private let config: AppConfig
     /// Once a warning has been presented in the current cycle, additional scheduled warnings
-    /// (from smaller offsets) are suppressed to avoid multiple sequential popups. This flag
-    /// is cleared when the user postpones (creating a materially new schedule) or when a 
-    /// cycle rollover occurs (post-shutdown or dry-run). Dismissing or ignoring the alert
-    /// does NOT clear this flag, ensuring only a single warning per cycle unless the user
-    /// takes an action that alters the schedule.
+/// are suppressed ONLY while an alert window is currently active. After the user dismisses
+    /// (Ignore) the alert, later warning offsets in the same cycle are allowed to present.
+    /// This prevents duplicate overlapping alerts while still surfacing escalating warnings
+    /// closer to the shutdown time. The flag is also cleared on postpone (new schedule) or
+    /// cycle rollover.
     private var warningPresentedThisCycle: Bool = false
     private let stateStore: StateStore
     private var state: ShutdownState
@@ -190,12 +190,12 @@ final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate {
                 reschedule()
                 return
             }
-            // Intentionally keep warningPresentedThisCycle = true to suppress further alerts.
-            // If the cycle rolled over while the alert was open, re-enable warning for the new cycle.
+            // Allow subsequent warnings in the same cycle (user ignored only this alert).
+            warningPresentedThisCycle = false
             if let presentedCycle = activeAlertCycleOriginalISO, presentedCycle != state.originalScheduledShutdownISO {
-                warningPresentedThisCycle = false
+                // Cycle changed while alert open; enable scheduling for new cycle.
                 activeAlertCycleOriginalISO = nil
-                reschedule() // schedule warnings for the new cycle now that UI is clear
+                reschedule()
             } else {
                 activeAlertCycleOriginalISO = nil
             }

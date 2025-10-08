@@ -39,7 +39,7 @@ final class ShutdownControllerAlertCoalescingTests: XCTestCase {
         )
     }
 
-    func testSecondWarningSkippedWhileAlertActive() throws {
+    func testSecondWarningSkippedWhileActiveButLaterWarningAfterIgnoreAllowed() throws {
         let now = Date()
         let clock = FixedClock(now: now)
         let config = makeConfig()
@@ -71,11 +71,11 @@ final class ShutdownControllerAlertCoalescingTests: XCTestCase {
         // Simulate user ignoring -> clears active flag
         presenter.delegate?.userIgnored()
 
-        // Third warning after dismissal should NOT present again in same cycle (suppressed).
-        controller.warningDue()
+        // Third warning after dismissal SHOULD present again in same cycle (new desired behavior).
+        controller.warningDue() // now allowed because previous was ignored and no alert active
         let exp2 = expectation(description: "drain2")
         controller._testCurrentState { _ in exp2.fulfill() }
         wait(for: [exp2], timeout: 1.0)
-        XCTAssertEqual(presenter.presentCalls.count, 1, "Warning after dismissal should remain suppressed until postpone or cycle change")
+        XCTAssertEqual(presenter.presentCalls.count, 2, "Warning after dismissal should present again in same cycle under new ignore semantics")
     }
 }
