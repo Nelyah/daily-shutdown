@@ -51,9 +51,10 @@ final class AlertPresenter: AlertPresenting {
     /// Build the informative text displayed in the alert for a given model.
     /// Extracted to enable deterministic unit tests without invoking AppKit modals.
     /// - Returns: Multi-line string describing the shutdown plan and postpone status.
-    static func buildInformativeText(model: AlertModel, dateFormatter: DateFormatter) -> String {
+    static func buildInformativeText(model: AlertModel, dateFormatter: DateFormatter, now: Date = Date()) -> String {
+        // 'now' parameter enables deterministic unit tests of the dynamic countdown string.
         let timeStr = dateFormatter.string(from: model.scheduled)
-        let remainingRelative = Self.relativeTime(until: model.scheduled)
+        let remainingRelative = Self.relativeTime(until: model.scheduled, now: now)
         var lines: [String] = []
         lines.append("Scheduled: \(timeStr) (in \(remainingRelative))")
         if model.original != model.scheduled { // suppress duplicate original line when unchanged
@@ -91,6 +92,37 @@ final class AlertPresenter: AlertPresenting {
             alert.alertStyle = .critical
             alert.messageText = "Scheduled System Shutdown"
             alert.informativeText = Self.buildInformativeText(model: model, dateFormatter: df)
+            // --- Dynamic countdown update -------------------------------------------------------
+            // We want the (in Xs) portion to decrement live. Changing alert.informativeText after the
+            // alert view hierarchy is created does not update the label automatically, so we find the
+            // underlying NSTextField once and mutate it every second while the modal run loop spins.
+            // NOTE: NSAlert.runModal() installs its own run loop mode; we therefore add our timer to
+            // both .common and the legacy modal panel mode name so it continues firing.
+            func locateInformativeTextField(in view: NSView) -> NSTextField? {
+                for sub in view.subviews {
+                    if let tf = sub as? NSTextField, tf.stringValue.contains("Scheduled:") { return tf }
+                    if let found = locateInformativeTextField(in: sub) { return found }
+                }
+                return nil
+            }
+            var informativeField: NSTextField?
+            var updateTimer: Timer? = nil
+            let makeTimer = {
+                Timer(timeInterval: 1.0, repeats: true) { _ in
+                    guard let contentView = alert.window.contentView else { return }
+                    if informativeField == nil { informativeField = locateInformativeTextField(in: contentView) }
+                    guard let field = informativeField else { return }
+                    field.stringValue = Self.buildInformativeText(model: model, dateFormatter: df)
+                    field.displayIfNeeded()
+                    if model.scheduled.timeIntervalSinceNow <= 0 { updateTimer?.invalidate(); updateTimer = nil }
+                }
+            }
+            updateTimer = makeTimer()
+            if let t = updateTimer {
+                RunLoop.main.add(t, forMode: .common)
+                RunLoop.main.add(t, forMode: RunLoop.Mode(rawValue: "NSModalPanelRunLoopMode"))
+            }
+            // ------------------------------------------------------------------------------------
             if model.postponesUsed < model.maxPostpones {
                 alert.addButton(withTitle: Self.postponeButtonTitle(seconds: model.postponeIntervalSeconds))
                 // Capture shutdown button to mark as destructive.
@@ -105,6 +137,8 @@ final class AlertPresenter: AlertPresenting {
             }
 
             let response = alert.runModal()
+            // Stop further UI updates now that the user has responded.
+            updateTimer?.invalidate(); updateTimer = nil
             if model.postponesUsed < model.maxPostpones {
                 if response == .alertFirstButtonReturn { self.delegate?.userChosePostpone(); return }
                 if response == .alertSecondButtonReturn { self.delegate?.userChoseShutdownNow(); return }
