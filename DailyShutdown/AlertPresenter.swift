@@ -136,8 +136,31 @@ final class AlertPresenter: AlertPresenting {
                 alert.addButton(withTitle: "Ignore")
             }
 
+            // --- Neutralize default button focus ----------------------------------------------
+            // Goal: postpone button remains blue (default) but Space key should NOT trigger it.
+            // Strategy: keep Return keyEquivalent on postpone button and swallow Space via local monitor.
+            if model.postponesUsed < model.maxPostpones {
+                if let postponeButton = alert.buttons.first { postponeButton.keyEquivalent = "\r" }
+                for b in alert.buttons.dropFirst() { b.keyEquivalent = "" }
+            } else {
+                for b in alert.buttons { b.keyEquivalent = "" }
+            }
+            _ = alert.window // ensure window created so default highlight applies
+            if let defaultCell = alert.buttons.first?.cell as? NSButtonCell { alert.window.defaultButtonCell = defaultCell }
+            // Provide neutral initial first responder (non-button) to eliminate halo on Ignore or default button.
+            final class _NeutralInitialResponderView: NSView { override var acceptsFirstResponder: Bool { true } }
+            let neutralInitial = _NeutralInitialResponderView(frame: .zero)
+            alert.window.contentView?.addSubview(neutralInitial)
+            alert.window.initialFirstResponder = neutralInitial
+            let spaceMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { ev in
+                if ev.keyCode == 49 { return nil } // swallow Space
+                return ev
+            }
+            // ------------------------------------------------------------------------------------
+
             let response = alert.runModal()
             // Stop further UI updates now that the user has responded.
+            if let monitor = spaceMonitor { NSEvent.removeMonitor(monitor) }
             updateTimer?.invalidate(); updateTimer = nil
             if model.postponesUsed < model.maxPostpones {
                 if response == .alertFirstButtonReturn { self.delegate?.userChosePostpone(); return }
