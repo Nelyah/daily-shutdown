@@ -109,6 +109,19 @@ final class ShutdownController: SchedulerDelegate, AlertPresenterDelegate {
     /// Warning timer fired: present alert with current model details.
     func warningDue() {
         stateQueue.async { [self] in
+            // Guard against stale warnings from a previous day (e.g., wake from sleep).
+            if let scheduled = lastScheduledShutdownDate {
+                let now = clock.now()
+                let cal = Calendar.current
+                if !cal.isDate(now, inSameDayAs: scheduled) {
+                    log("Skipping stale warning: scheduled=\(scheduled) now=\(now) (different day)")
+                    state = StateFactory.newState(now: now, config: config)
+                    if !config.options.noPersist { stateStore.save(state) }
+                    reschedule()
+                    return
+                }
+            }
+
             // Suppress if an alert is already active (coalesce overlapping warnings).
             if warningAlertActive { return }
             guard let shutdownDate = StateFactory.parseISO(state.scheduledShutdownISO),
