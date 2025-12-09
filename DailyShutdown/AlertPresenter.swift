@@ -152,6 +152,8 @@ final class AlertPresenter: AlertPresenting {
             let neutralInitial = _NeutralInitialResponderView(frame: .zero)
             alert.window.contentView?.addSubview(neutralInitial)
             alert.window.initialFirstResponder = neutralInitial
+            // Center the alert window on screen to ensure consistent placement.
+            alert.window.center()
             let spaceMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { ev in
                 if ev.keyCode == 49 { return nil } // swallow Space
                 return ev
